@@ -89,7 +89,7 @@ USER_AGENT = (
 )
 
 # =============================
-# Pydantic 표준 스키마
+# Pydantic 표준 스키마 1
 # =============================
 
 class FestivalIn(BaseModel):
