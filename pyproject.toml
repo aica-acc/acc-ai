@@ -46,3 +46,4 @@ dependencies = [
     "nltk>=3.9.1",
     "yfinance>=0.2.51",
 ]
+
