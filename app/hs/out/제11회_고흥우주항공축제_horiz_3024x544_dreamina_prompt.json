@@ -1,0 +1,8 @@
+{
+  "width": 3024,
+  "height": 544,
+  "prompt": "Ultra-wide print banner for the Goheung Aerospace Festival, set against a vibrant cosmic backdrop featuring stars and rockets. Emphasize bold, engaging typography with bright colors and dynamic lighting to capture attention in the headline area. Incorporate a dynamic composition that highlights interactive experiences and local artistry, ensuring visual appeal for all ages. Place the following text exactly, each on its own line, inside double quotes (quotes are for parsing only; do not draw the quote marks in the image): \"Goheung Aerospace Festival\", \"July 28 - August 1 2017\", \"Naro Space Center Park\". No extra text, no watermarks or logos, no borders or frames.",
+  "aspect_ratio": "custom",
+  "resolution": "2K",
+  "use_pre_llm": true
+}
