@@ -2,6 +2,8 @@
 """
 horizontal_3024_544_make_banner_from_prompt.py
 - (width/height/prompt[+옵션]) JSON → Dreamina 3.1 호출 → out/ 저장
+- 이미지 생성 직전에 check_prompt_change.process_job()으로 prompt 최신화(롤링 기준선)
+  * 환경변수 CHECKPROMPT_WRITEBACK=1 이면, 최신화된 job을 같은 JSON 파일에 저장
 """
 
 import os, re, json, time
@@ -15,6 +17,12 @@ try:
     import requests
 except Exception as e:
     raise SystemExit("[에러] 'requests' 모듈이 없습니다.  `pip install requests`") from e
+
+# check_prompt_change 통합 (선택적)
+try:
+    from check_prompt_change import process_job as _check_prompt_job
+except Exception:
+    _check_prompt_job = None
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUT_DIR = SCRIPT_DIR / "out"
@@ -105,6 +113,19 @@ def download_and_save(urls, out_dir: Path, base_name: str):
         out_path.write_bytes(r.content); saved.append(out_path)
     return saved
 
+def _maybe_writeback(job_path: Path, job: dict):
+    """
+    환경변수 CHECKPROMPT_WRITEBACK=1 일 때만,
+    check_prompt_change 결과를 원본 JSON 파일에 반영(예: prompt, prompt_ko_baseline).
+    """
+    do_write = os.getenv("CHECKPROMPT_WRITEBACK", "1").lower() in ("1","true","yes")
+    if not do_write: return
+    try:
+        job_path.write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[info] check_prompt_change 결과를 파일에 반영했습니다 → {job_path.resolve()}")
+    except Exception as e:
+        print(f"[경고] 파일 반영 실패: {e}")
+
 def main():
     print("=== Dreamina 3.1 배너 생성기 (prompt JSON -> 이미지, 3024x544 기본) ===")
     job_path = ask_path("1) job JSON 경로(width/height/prompt[+옵션]): ")
@@ -112,6 +133,18 @@ def main():
         job = load_job(job_path)
     except Exception as e:
         print(e); return
+
+    # ✅ 이미지 생성 직전, prompt 최신화 시도
+    if _check_prompt_job is not None:
+        job2, changed, reason = _check_prompt_job(job, rolling_baseline=True)
+        if changed:
+            print(f"[info] prompt가 check_prompt_change에 의해 갱신됨 ({reason})")
+            job = job2
+            _maybe_writeback(job_path, job)  # 선택적 파일 반영 (ENV로 제어)
+        else:
+            print(f"[info] prompt 변경 없음 ({reason})")
+    else:
+        print("[info] check_prompt_change 모듈을 찾지 못해 원본 prompt로 진행합니다.")
 
     print(f"[info] width: {job['width']}, height: {job['height']}")
     pv = job["prompt"]; print(f"[info] prompt 미리보기: {pv[:180]}{'...' if len(pv)>180 else ''}")

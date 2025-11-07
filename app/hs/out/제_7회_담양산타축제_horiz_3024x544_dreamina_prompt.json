@@ -1,0 +1,12 @@
+{
+  "width": 3024,
+  "height": 544,
+  "aspect_ratio": "custom",
+  "resolution": "2K",
+  "use_pre_llm": true,
+  "prompt_original": "Ultra-wide print banner for the 7th Damyang Santa Festival, set against a backdrop of enchanting winter scenery. Emphasize the festive atmosphere with vibrant lights and interactive experiences for all ages. Incorporate engaging photo zones and sensory programs to enhance visitor enjoyment and community spirit. Place the following text exactly, each on its own line, inside double quotes (quotes are for parsing only; do not draw the quote marks in the image): \"7th Damyang Santa Festival\", \"2025 12 24 - 12 25\", \"Meta Land\". No extra text, no watermarks or logos, no borders or frames.",
+  "prompt": "Ultra-wide print banner for the 99th Busan Beach Festival, set against a captivating summer landscape. Emphasize the festival atmosphere with vibrant lighting and interactive experiences for all ages. Incorporate engaging photo zones and sensory programs to enhance visitor enjoyment and community identity. Place the following text exactly, each on its own line, inside double quotes (quotes are for parsing only; do not draw the quote marks in the image): \"99th Busan Beach Festival\", \"2099-01-01 - 01-05\", \"Busan Haeundae\". No extra text, no watermarks or logos, no borders or frames.",
+  "prompt_ko_original": "7회 담양 산타 페스티벌을 위한 초광폭 인쇄 배너, 매혹적인 겨울 풍경을 배경으로 설정. 생동감 넘치는 조명과 모든 연령대를 위한 인터랙티브한 경험으로 축제 분위기를 강조. 방문객의 즐거움과 지역 사회의 정체성을 높이기 위해 매력적인 포토존과 감각 프로그램을 포함. 다음 텍스트를 정확히, 각 줄마다 따옴표 안에 배치 (따옴표는 파싱을 위한 것; 이미지에 따옴표 표시하지 않음): \"7회 담양 산타 페스티벌\", \"2025 12 24 - 12 25\", \"메타 랜드\". 추가 텍스트, 워터마크나 로고, 테두리나 프레임 없음.",
+  "prompt_ko": "99회 부산 해변 페스티벌을 위한 초광폭 인쇄 배너, 매혹적인 여름 풍경을 배경으로 설정. 생동감 넘치는 조명과 모든 연령대를 위한 인터랙티브한 경험으로 축제 분위기를 강조. 방문객의 즐거움과 지역 사회의 정체성을 높이기 위해 매력적인 포토존과 감각 프로그램을 포함. 다음 텍스트를 정확히, 각 줄마다 따옴표 안에 배치 (따옴표는 파싱을 위한 것; 이미지에 따옴표 표시하지 않음): \"99회 부산 해변 페스티벌\", \"2099 01 01 - 01 05\", \"부산 해운대\". 추가 텍스트, 워터마크나 로고, 테두리나 프레임 없음.",
+  "prompt_ko_baseline": "99회 부산 해변 페스티벌을 위한 초광폭 인쇄 배너, 매혹적인 여름 풍경을 배경으로 설정. 생동감 넘치는 조명과 모든 연령대를 위한 인터랙티브한 경험으로 축제 분위기를 강조. 방문객의 즐거움과 지역 사회의 정체성을 높이기 위해 매력적인 포토존과 감각 프로그램을 포함. 다음 텍스트를 정확히, 각 줄마다 따옴표 안에 배치 (따옴표는 파싱을 위한 것; 이미지에 따옴표 표시하지 않음): \"99회 부산 해변 페스티벌\", \"2099 01 01 - 01 05\", \"부산 해운대\". 추가 텍스트, 워터마크나 로고, 테두리나 프레임 없음."
+}
