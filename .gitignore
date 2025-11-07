@@ -15,3 +15,6 @@ wheels/
 # file
 /홍보물
 /data/*.csv
+*.png
+*.csv
+*ttf
