@@ -20,7 +20,7 @@ except Exception as e:
 
 # check_prompt_change 통합 (선택적)
 try:
-    from check_prompt_change import process_job as _check_prompt_job
+    from app.service.banner.check_prompt_change import process_job as _check_prompt_job
 except Exception:
     _check_prompt_job = None
 
