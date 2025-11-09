@@ -1,8 +1,0 @@
-# 1. 가로형
-python horizontal_3024_544_make_prompt_from_analysis.py
-python horizontal_3024_544_make_banner_from_prompt.py
-
-
-# 1. 세로형
-python vertical_1008_3024_make_prompt_from_analysis.py
-python vertical_1008_3024_make_banner_from_prompt.py
