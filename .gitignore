@@ -24,3 +24,6 @@ wheels/
 # test 코드
 __init__.py
 /app/dh/test/*
+*.png
+*.csv
+*ttf

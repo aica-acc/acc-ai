@@ -1,19 +1,12 @@
 [project]
-name = "acc-ai"
+name = "uv-hackathon"
 version = "0.1.0"
-description = "Festival poster harvester + AI analysis modules"
+description = "Hackathon prototype with Instagram/YouTube crawling + LangGraph"
 readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
-    # --- 영상/이미지 ---
-    "moviepy>=2.2.1",
-    "opencv-python-headless>=4.12.0.88",
-    "scenedetect>=0.6.7.1",
-    "ultralytics>=8.3.214",
-    "yt-dlp>=2025.10.14",
-
-    # --- 크롤링 ---
+    # --- 크롤링 관련 ---
     "selenium>=4.27.1",
     "webdriver-manager>=4.0.2",
     "beautifulsoup4>=4.12.3",
@@ -24,10 +17,10 @@ dependencies = [
     "google-auth>=2.37.0",
     "google-auth-oauthlib>=1.2.1",
 
-    # --- 환경변수 관리 ---
+    # --- 환경 변수 관리 ---
     "python-dotenv>=1.0.1",
 
-    # --- LangChain / LangGraph ---
+    # --- LangChain / LangGraph 관련 ---
     "langchain>=0.3.13",
     "langchain-core>=0.3.56",
     "langchain-community>=0.3.13",
@@ -37,23 +30,20 @@ dependencies = [
     "langgraph-checkpoint>=2.0.9",
     "langgraph-sdk>=0.1.48",
 
-    # --- DB/임베딩 ---
+    # --- 임베딩/DB/유틸 ---
     "chromadb>=0.5.23",
     "tiktoken>=0.8.0",
     "numpy>=1.26.4",
     "pandas>=2.2.3",
 
-    # --- 웹/앱 프레임워크 ---
+    # --- 웹/앱 프레임워크 (FastAPI + Streamlit) ---
     "fastapi>=0.115.6",
     "uvicorn>=0.34.0",
     "streamlit>=1.43.0",
 
-    # --- NLP / 분석 ---
+    # --- 기타 필요 라이브러리 ---
+    "matplotlib-inline>=0.1.7",
     "nltk>=3.9.1",
     "yfinance>=0.2.51",
-
-    # --- 포스터 하베스터 전용 ---
-    "pydantic>=2.9",
-    "tqdm>=4.66.5",
-    "rapidfuzz>=3.9.7",
 ]
+
