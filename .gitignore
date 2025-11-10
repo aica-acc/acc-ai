@@ -20,10 +20,8 @@ wheels/
 *.png
 *.pdf
 *.webp
+*ttf
 
 # test 코드
 __init__.py
-/app/dh/test/*
-*.png
-*.csv
-*ttf
+
