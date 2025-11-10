@@ -13,8 +13,15 @@ wheels/
 .env
 
 # file
-/홍보물
-/data/*.csv
-*.png
+*.json
 *.csv
+*.jpg
+*.jpeg
+*.png
+*.pdf
+*.webp
 *ttf
+
+# test 코드
+__init__.py
+

@@ -11,15 +11,12 @@ dependencies = [
     "webdriver-manager>=4.0.2",
     "beautifulsoup4>=4.12.3",
     "requests>=2.32.3",
-
     # --- YouTube API ---
     "google-api-python-client>=2.156.0",
     "google-auth>=2.37.0",
     "google-auth-oauthlib>=1.2.1",
-
     # --- 환경 변수 관리 ---
     "python-dotenv>=1.0.1",
-
     # --- LangChain / LangGraph 관련 ---
     "langchain>=0.3.13",
     "langchain-core>=0.3.56",
@@ -29,21 +26,19 @@ dependencies = [
     "langgraph>=0.2.60",
     "langgraph-checkpoint>=2.0.9",
     "langgraph-sdk>=0.1.48",
-
     # --- 임베딩/DB/유틸 ---
     "chromadb>=0.5.23",
     "tiktoken>=0.8.0",
     "numpy>=1.26.4",
     "pandas>=2.2.3",
-
     # --- 웹/앱 프레임워크 (FastAPI + Streamlit) ---
     "fastapi>=0.115.6",
     "uvicorn>=0.34.0",
     "streamlit>=1.43.0",
-
     # --- 기타 필요 라이브러리 ---
     "matplotlib-inline>=0.1.7",
     "nltk>=3.9.1",
     "yfinance>=0.2.51",
+    "python-multipart>=0.0.20",
 ]
 
