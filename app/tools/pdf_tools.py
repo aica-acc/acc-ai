@@ -207,3 +207,60 @@ def analyze_pdf(pdf_file_path):
         print(f" PDF 분석 중 오류 발생: {e}")
         return {"error": f"PDF 분석 오류: {e}"}
 
+#-----------------------------------------------(키워드 확장하는거 추가)
+
+def expand_keywords_with_ai(keywords_list):
+    """
+    AI(GPT)를 사용해, 주어진 키워드 리스트와 '연관된' 키워드를 4~5개 더 생성합니다.
+    (이 함수는 poster_service/pdf_tools.py에 있었으나, app/tools/pdf_tools.py로 이동)
+    """
+    print(f"  [pdf_tools] 4. AI 키워드 확장 시작: {keywords_list}")
+    
+    # 1. AI에게 보낼 프롬프트
+    system_prompt = """
+    당신은 대한민국 최고의 축제 마케팅 전문가입니다.
+    사용자가 제공하는 '핵심 키워드' 리스트를 기반으로,
+    축제 포스터 트렌드를 검색하는 데 유용할 '연관 키워드' 5개를 추가로 생성합니다.
+    
+    [규칙]
+    - '산타' -> '크리스마스', '루돌프' 처럼 연상되는 단어를 생성하세요.
+    - '가족' -> '아이', '체험' 처럼 관련된 단어를 생성하세요.
+    - 응답은 반드시 아래와 같은 JSON 형식이어야 합니다.
+    
+    [JSON 응답 형식]
+    {
+      "expanded_keywords": ["새 키워드1", "새 키워드2", "새 키워드3", "새 키워드4", "새 키워드5"]
+    }
+    """
+    
+    user_prompt = f"""
+    [핵심 키워드]
+    {', '.join(keywords_list)}
+    
+    ---
+    위 키워드와 연관된 키워드 5개를 JSON 형식으로 생성해줘.
+    """
+    
+    try:
+        # (v31 업데이트: OPENAI_API_KEY는 pdf_tools 상단에서 이미 로드됨)
+        client = openai.OpenAI() 
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            response_format={"type": "json_object"}
+        )
+        
+        response_data = json.loads(response.choices[0].message.content)
+        new_keywords = response_data.get("expanded_keywords", [])
+        
+        print(f"    - AI가 생성한 새 키워드: {new_keywords}")
+        
+        # 2. '원본 키워드'와 '새 키워드'를 합쳐서 반환
+        return list(set(keywords_list + new_keywords)) # set()으로 중복 제거
+
+    except Exception as e:
+        print(f" AI 키워드 확장 중 오류 발생: {e}")
+        return keywords_list # 실패하면 원본 키워드라도 그대로 반환

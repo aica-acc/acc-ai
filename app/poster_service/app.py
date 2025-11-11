@@ -1,39 +1,31 @@
-# app.py (v29: '하이브리드 편집기' 아키텍처)
+# router.py (v29: '하이브리드 편집기' 아키텍처)
 
 import os
 import json
-from flask import Flask, request, jsonify
-from flask import send_from_directory
+from fastapi import APIRouter, Form
 
 # ----------------------------------------------------
 # 1. '엔진' 파일들을 import (⭐️ v17/v29 호환)
 # ----------------------------------------------------
 try:
     import pdf_tools           # (v17: 문서 분석)
-    import poster_generator    # (v29: 스타일 가이드 제안)
-    import trend_analyzer      # (CSV 내부 DB)
-    import image_generator     # (v29: 텍스트 없는 배경 생성)
-    import trend_search        # (v17: 외부 트렌드)
+    import app.service.poster.poster_generator as poster_generator    # (v29: 스타일 가이드 제안)
+    import app.service.poster.trend_analyzer as trend_analyzer      # (CSV 내부 DB)
+    import app.service.poster.image_generator as image_generator     # (v29: 텍스트 없는 배경 생성)
+    import app.service.poster.trend_search as trend_search        # (v17: 외부 트렌드)
 except ImportError as e:
-    print(f"🚨 [app.py] 치명적 오류: 모듈 import 실패! {e}")
+    print(f"🚨 [router.py] 치명적 오류: 모듈 import 실패! {e}")
     exit()
 
 # ----------------------------------------------------
 # 2. Flask 앱 생성 및 CORS 설정
 # ----------------------------------------------------
-app = Flask(__name__)
-# ( ... CORS 설정 동일 ... )
-CORS(app, resources={
-    r"/analyze": {"origins": ["http://localhost:3000", "http://localhost:5173", "http://localhost:5175"]},
-    r"/generate-prompt": {"origins": ["http://localhost:3000", "http://localhost:5173", "http://localhost:5175"]},
-    r"/create-image": {"origins": ["http://localhost:3000", "http://localhost:5173", "http://localhost:5175"]},
-    r"/images/*": {"origins": ["http://localhost:3000", "http://localhost:5173", "http://localhost:5175"]} 
-}) 
+router = APIRouter(prefix="/festival", tags=["Festival"])
 
 # ----------------------------------------------------
 # [API 1] ⭐️ 1단계 UI: "분석" 버튼용 (v17 - 변경 없음)
 # ----------------------------------------------------
-@app.route("/analyze", methods=["POST"])
+@router.post("/analyze")
 def handle_analysis_request():
     print("\n--- [Flask 서버] /analyze (1단계 분석 v17) 요청 수신 ---")
     # ( ... v17 코드와 100% 동일 ... )
@@ -91,7 +83,7 @@ def handle_analysis_request():
 # ----------------------------------------------------
 # [API 2] ⭐️ 2단계 UI: "AI 프롬프트 생성" 버튼용 (v29)
 # ----------------------------------------------------
-@app.route("/generate-prompt", methods=["POST"])
+@router.post("/generate-prompt")
 def handle_prompt_generation():
     print("\n--- [Flask 서버] /generate-prompt (2단계 v29) 요청 수신 ---")
     
@@ -126,7 +118,7 @@ def handle_prompt_generation():
 # ----------------------------------------------------
 # [API 3] ⭐️ 3단계 UI: "홍보물 생성" 버튼용 (⭐️ v29 - 하이브리드 ⭐️)
 # ----------------------------------------------------
-@app.route("/create-image", methods=["POST"])
+@router.post("/create-image")
 def handle_image_creation():
     """
     [v29 - 하이브리드] 
@@ -198,13 +190,6 @@ def handle_image_creation():
 # ----------------------------------------------------
 # [API 4] 이미지 파일 접근용 URL
 # ----------------------------------------------------
-@app.route('/images/<path:filename>')
+@router.get('/images/<path:filename>')
 def serve_image(filename):
     return send_from_directory(os.path.dirname(__file__), filename)
-
-# ----------------------------------------------------
-# 5. 서버 실행 
-# ----------------------------------------------------
-if __name__ == "__main__":
-    print("--- 🚀 FestGen AI (v30.1 - '하이브리드 편집기' / Reloader OFF) 백엔드 서버를 [ http://127.0.0.1:5000 ] 에서 시작합니다 ---")
-    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False) # ⭐️ 이 부분이 중요합니다.
