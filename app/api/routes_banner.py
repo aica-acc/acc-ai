@@ -1,23 +1,32 @@
-# app/api/routes_banner.py
 # -*- coding: utf-8 -*-
+# app/api/routes_banner.py
 from __future__ import annotations
 from typing import Optional, Literal, Any, Dict
 from pathlib import Path
-import os
+import os, json
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel
 
-from app.service.banner.make_prompt_from_analysis import make_banner_prompt_service
-from app.service.banner.make_banner_from_prompt import make_banner_from_prompt_service
-# 🔴 추가: 한글 변경 감지+영문 동기화 퍼사드 임포트
-# app/api/routes_banner.py
+# 프롬프트 생성 퍼사드(있을 경우)
+try:
+    from app.service.banner.make_prompt_from_analysis.service_make_prompt_from_analysis import (
+        make_banner_prompt_service,
+    )
+except Exception:
+    make_banner_prompt_service = None
+
+# 프롬프트 동기화(한/영)
 from app.service.banner.banner_prompt_update.service_banner_prompt_update import (
     ensure_prompt_synced_before_generation,
 )
 
+# 이미지 생성 퍼사드
+from app.service.banner.make_banner_from_prompt.service_make_banner_from_prompt import (
+    make_banner_from_prompt_service,
+)
 
 router = APIRouter(prefix="/banner", tags=["Banner"])
 
@@ -27,17 +36,6 @@ def _default_save_dir() -> Path:
 
 def _json_ok(payload: dict) -> JSONResponse:
     return JSONResponse(content=jsonable_encoder(payload, custom_encoder={Path: lambda p: p.as_posix()}))
-
-def _format_paths(
-    paths: list[str],
-    *,
-    mode: Literal["string_first", "string_join", "list"] = "string_first"
-):
-    if mode == "list":
-        return [str(p) for p in paths]
-    if mode == "string_join":
-        return ";".join(str(p) for p in paths)
-    return (str(paths[0]) if paths else "")
 
 # -------------------- 스키마 --------------------
 class PromptRequest(BaseModel):
@@ -49,21 +47,15 @@ class PromptRequest(BaseModel):
     resolution: str = "2K"
     use_pre_llm: bool = True
     seed: Optional[int] = None
-    schema: Literal["basic", "extended"] = "basic"
+    # 경고 방지: schema 대신 prompt_schema 사용
+    prompt_schema: Literal["basic", "extended"] = "basic"
 
 class GenerationRequest(BaseModel):
     job: Dict[str, Any]
     orientation: Literal["horizontal", "vertical"] = "horizontal"
-    width: Optional[int] = None
-    height: Optional[int] = None
-    aspect_ratio: str = "custom"
-    resolution: str = "2K"
-    seed: Optional[int] = None
-    use_pre_llm: bool = True
     return_type: Literal["dict", "list", "string"] = "dict"
     save_dir: Optional[str] = None
     filename_prefix: Optional[str] = None
-    path_format: Literal["string_first", "string_join", "list"] = "string_first"
 
 class GenerateFromAnalysisRequest(BaseModel):
     analysis_payload: Dict[str, Any]
@@ -74,15 +66,16 @@ class GenerateFromAnalysisRequest(BaseModel):
     resolution: str = "2K"
     use_pre_llm: bool = True
     seed: Optional[int] = None
-    schema: Literal["basic", "extended"] = "basic"
+    prompt_schema: Literal["basic", "extended"] = "basic"
     return_type: Literal["dict", "list", "string"] = "dict"
     save_dir: Optional[str] = None
     filename_prefix: Optional[str] = None
-    path_format: Literal["string_first", "string_join", "list"] = "string_first"
 
 # -------------------- 라우트 --------------------
 @router.post("/prompts")
 def create_prompt(req: PromptRequest):
+    if make_banner_prompt_service is None:
+        raise HTTPException(status_code=501, detail="prompt service not available")
     try:
         prompt_obj = make_banner_prompt_service(
             analysis_payload=req.analysis_payload,
@@ -92,7 +85,7 @@ def create_prompt(req: PromptRequest):
             resolution=req.resolution,
             use_pre_llm=req.use_pre_llm,
             seed=req.seed,
-            schema=req.schema,
+            schema=req.prompt_schema,
             strict=True,
         )
         return _json_ok(prompt_obj)
@@ -102,38 +95,28 @@ def create_prompt(req: PromptRequest):
 @router.post("/generations")
 def create_generation(req: GenerationRequest):
     try:
-        # ✅ 1) 한글 변경 감지 + 영문 prompt 동기화(항상 수행)
-        synced_job, changed, reason = ensure_prompt_synced_before_generation(req.job)
+        # 0) job이 문자열(JSON 텍스트)로 들어오는 상황 방어
+        job_in = req.job
+        if isinstance(job_in, str):
+            try:
+                job_in = json.loads(job_in)
+            except Exception:
+                raise HTTPException(status_code=422, detail="job must be an object (dict), not a JSON string.")
 
-        # ✅ 2) 이미지 생성
+        # 1) 한글 변경 → 영어 프롬포트 동기화
+        job_synced = ensure_prompt_synced_before_generation(job_in)
+
+        # 2) 저장 경로
         save_dir = Path(req.save_dir) if req.save_dir else _default_save_dir()
+
+        # 3) 생성
         gen = make_banner_from_prompt_service(
-            synced_job,
+            job_synced,
             orientation=req.orientation,
-            width=req.width, height=req.height,
-            aspect_ratio=req.aspect_ratio,
-            resolution=req.resolution,
-            seed=req.seed,
-            use_pre_llm=req.use_pre_llm,
-            return_type=req.return_type,
             save_dir=save_dir,
             filename_prefix=req.filename_prefix,
+            return_type=req.return_type,
         )
-
-        # ✅ 3) 직렬화/경로 형식 변환 + 동기화 결과 주석
-        if isinstance(gen, dict):
-            if "images" in gen: gen["images"] = [str(u) for u in gen.get("images", [])]
-            raw = gen.get("file_path", "")
-            if isinstance(raw, list):  # 안전 처리
-                gen["file_path"] = _format_paths([str(p) for p in raw], mode=req.path_format)
-            else:
-                gen["file_path"] = str(raw)
-            if "inputs" in gen and isinstance(gen["inputs"], dict):
-                gen["inputs"] = {str(k): (v.as_posix() if isinstance(v, Path) else v) for k, v in gen["inputs"].items()}
-            gen.pop("artifact_paths", None)
-
-            # 🔎 동기화 메타 포함(디버깅/확인용)
-            gen["sync"] = {"changed": changed, "reason": reason}
 
         return _json_ok(gen)
     except Exception as e:
@@ -141,6 +124,8 @@ def create_generation(req: GenerationRequest):
 
 @router.post("/generate-from-analysis")
 def generate_from_analysis(req: GenerateFromAnalysisRequest):
+    if make_banner_prompt_service is None:
+        raise HTTPException(status_code=501, detail="prompt service not available")
     try:
         # 1) 프롬프트 생성
         prompt_obj = make_banner_prompt_service(
@@ -151,37 +136,23 @@ def generate_from_analysis(req: GenerateFromAnalysisRequest):
             resolution=req.resolution,
             use_pre_llm=req.use_pre_llm,
             seed=req.seed,
-            schema=req.schema,
+            schema=req.prompt_schema,
             strict=True,
         )
 
-        # 2) (선택) 프론트에서 곧바로 ko 수정 후 보낼 수 있으니, 동일 규칙으로 동기화 수행
-        synced_job, changed, reason = ensure_prompt_synced_before_generation(prompt_obj)
+        # 2) 한글 변경 감지(사용자가 prompt_ko를 수정했을 수 있음)
+        job_synced = ensure_prompt_synced_before_generation(prompt_obj)
 
         # 3) 이미지 생성
         save_dir = Path(req.save_dir) if req.save_dir else _default_save_dir()
         gen = make_banner_from_prompt_service(
-            synced_job,
+            job_synced,
             orientation=req.orientation,
-            width=req.width, height=req.height,
-            aspect_ratio=req.aspect_ratio,
-            resolution=req.resolution,
-            seed=req.seed,
-            use_pre_llm=req.use_pre_llm,
-            return_type=req.return_type,
             save_dir=save_dir,
             filename_prefix=req.filename_prefix,
+            return_type=req.return_type,
         )
 
-        if isinstance(gen, dict):
-            if "images" in gen: gen["images"] = [str(u) for u in gen.get("images", [])]
-            raw = gen.get("file_path", "")
-            gen["file_path"] = str(raw)
-            if "inputs" in gen and isinstance(gen["inputs"], dict):
-                gen["inputs"] = {str(k): (v.as_posix() if isinstance(v, Path) else v) for k, v in gen["inputs"].items()}
-            gen.pop("artifact_paths", None)
-            gen["sync"] = {"changed": changed, "reason": reason}
-
-        return _json_ok({"ok": True, "prompt": synced_job, "generation": gen})
+        return _json_ok({"ok": True, "prompt": prompt_obj, "generation": gen})
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"banner generate-from-analysis failed: {type(e).__name__}: {e}")
