@@ -23,9 +23,12 @@ _DEFAULT_SIZE: dict[Literal["horizontal","vertical"], tuple[int,int]] = {
 DEFAULT_AR  = "custom"
 DEFAULT_RES = "2K"
 
+# (업데이트) 중복 억제 지시를 보다 강하게, 원문 의도 유지
 PHRASE = (
-    "Place the following text exactly, each on its own line, inside double quotes "
-    "(quotes are for parsing only; do not draw the quote marks in the image)"
+    "Render EXACTLY {N} LINES of typography as ONE SINGLE GROUP. "
+    "Print each quoted phrase ONCE ONLY. Do not add duplicates, variations, "
+    "mirrored or background text, captions, signage, subtitles, or any other words or numbers. "
+    "The phrases are provided inside double quotes (quotes are for parsing only; do not draw the quote marks)"
 )
 
 # -------------------- env / llm --------------------
@@ -85,6 +88,27 @@ def _normalize_prompt(text: str) -> str:
         except Exception:
             pass
     return " ".join(t.split())
+
+# (추가) 따옴표 라인 중복 제거용 노멀라이저/디듀프
+def _norm_for_dedupe(s: str) -> str:
+    s = (s or "").lower().strip().strip('"')
+    s = s.replace("–","-").replace("—","-").replace("~","-")
+    s = re.sub(r"\s+", "", s)           # 공백 제거
+    s = re.sub(r"[^a-z0-9\-]", "", s)   # 영문/숫자/하이픈만
+    return s
+
+def _dedupe_quoted(lines: List[str]) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for ln in lines:
+        key = _norm_for_dedupe(ln)
+        if not key:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(ln)  # 최초 1회만 보존
+    return out
 
 # -------------------- helper --------------------
 def _resolve_size(
@@ -254,6 +278,10 @@ def generate_banner_prompt_from_analysis(
     if fields.get("title_en"):      quoted.append(f"\"{fields['title_en']}\"")
     if fields.get("date_range_en"): quoted.append(f"\"{fields['date_range_en']}\"")
     if fields.get("location_en"):   quoted.append(f"\"{fields['location_en']}\"")
+
+    # (업데이트) 같은 내용이 여러 번 들어온 경우 1회만 보존
+    quoted = _dedupe_quoted(quoted)
+
     if strict and not quoted:
         raise ValueError("Required quoted lines missing (title/date/location).")
 
@@ -263,8 +291,13 @@ def generate_banner_prompt_from_analysis(
         analysis, title_hint, use_pre_llm=use_pre_llm, llm_model=llm_model, strict=strict
     )
 
-    # 3) tail
-    tail = f" {PHRASE}: " + ", ".join(quoted) + ". No extra text, no watermarks or logos, no borders or frames."
+    # 3) tail (업데이트: 정확히 N줄, 중복 금지, 배경/사물 글씨 금지 명시)
+    N = len(quoted)
+    tail = (
+        " " + PHRASE.format(N=N) + ": " + ", ".join(quoted) +
+        ". No extra text anywhere, no repetitions or duplicate titles, "
+        "no watermarks or logos, no borders or frames."
+    )
     prompt_en = _normalize_prompt(body_en + " " + tail)
 
     # 4) ko
