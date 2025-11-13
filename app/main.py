@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import routes_festival, routes_images
+from app.api import routes_festival, routes_images, routes_poster
 
 app = FastAPI(title="Festival Promotion API")
 
 app.include_router(routes_festival.router)
 app.include_router(routes_images.router)
+app.include_router(routes_poster.router)
 
 @app.get("/")
 def root():

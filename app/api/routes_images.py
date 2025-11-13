@@ -1,6 +1,6 @@
 
 from fastapi import APIRouter, Query
-from tools.cardnews.image_loader import download_cardnews_images
+from app.tools.cardnews.image_loader import download_cardnews_images
 import asyncio
 
 router = APIRouter(prefix="/festival", tags=["Festival"])
