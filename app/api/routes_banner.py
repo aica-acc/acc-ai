@@ -174,7 +174,7 @@ def analyze_banner(req: BannerAnalyzeRequest):
     """
     현수막 트렌드 분석 (LLM 기반)
     - 입력: p_name, user_theme, keywords
-    - 출력: banner_trend (Markdown 텍스트, 3단락)
+    - 출력: JSON 객체 (3개 섹션)
     """
     if analyze_banner_trend_with_llm is None:
         raise HTTPException(
@@ -183,15 +183,21 @@ def analyze_banner(req: BannerAnalyzeRequest):
         )
 
     try:
-        banner_trend = analyze_banner_trend_with_llm(
+        trend = analyze_banner_trend_with_llm(
             p_name=req.p_name,
             user_theme=req.user_theme,
             keywords=req.keywords,
         )
-        return _json_ok({"banner_trend": banner_trend})
+        # trend 자체가 dict:
+        # {
+        #   "similar_theme_banner_analysis": "...",
+        #   "evidence_and_effects": "...",
+        #   "strategy_for_our_festival": "..."
+        # }
+        return _json_ok(trend)
     except Exception as e:
-        # LLM 호출 에러, 키 미설정 등
         raise HTTPException(
             status_code=400,
             detail=f"banner analyze failed: {type(e).__name__}: {e}",
         )
+
