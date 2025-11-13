@@ -129,7 +129,7 @@ def create_master_prompt(
         [시안 생성 규칙 (매우 중요)]
         1. 4개의 시안은 '서로 다른' 스타일이어야 하며, [1단계 분석 자료]에 '근거'해야 합니다.
         
-        2. ⭐️ [v30.1 치명적 규칙]
+        2. [v30.1 치명적 규칙]
            모든 스타일 제안은 '사실적인 사진(photorealistic, cinematic, realistic, photo)' 스타일을 '절대' 제안해서는 안 됩니다.
            모든 스타일 제안은 [1단계 분석 자료]를 기반으로, 다음 카테고리('illustration', 'graphic design', 'digital art', 'typography', 'abstract', 'minimalist') 중에서만 '창의적으로' 해석해야 합니다.
            (예: [기획서 요약]의 '불꽃쇼' -> '화려한 '불꽃 일러스트'(O)', '추상적인 '그래픽 아트'(O)', "사실적인 '불꽃 사진'(X)")
