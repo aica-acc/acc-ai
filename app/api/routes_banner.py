@@ -18,6 +18,13 @@ try:
 except Exception:
     make_banner_prompt_service = None
 
+try:
+    from app.service.banner.banner_trend_analysis.service_banner_trend_analysis import (
+        analyze_banner_trend_with_llm,
+    )
+except Exception:
+    analyze_banner_trend_with_llm = None
+
 # 프롬프트 동기화(한/영)
 from app.service.banner.banner_prompt_update.service_banner_prompt_update import (
     ensure_prompt_synced_before_generation,
@@ -38,6 +45,11 @@ def _json_ok(payload: dict) -> JSONResponse:
     return JSONResponse(content=jsonable_encoder(payload, custom_encoder={Path: lambda p: p.as_posix()}))
 
 # -------------------- 스키마 --------------------
+class BannerAnalyzeRequest(BaseModel):
+    p_name: str
+    user_theme: str
+    keywords: list[str]
+
 class PromptRequest(BaseModel):
     analysis_payload: Dict[str, Any]
     orientation: Literal["horizontal", "vertical"] = "horizontal"
@@ -156,3 +168,30 @@ def generate_from_analysis(req: GenerateFromAnalysisRequest):
         return _json_ok({"ok": True, "prompt": prompt_obj, "generation": gen})
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"banner generate-from-analysis failed: {type(e).__name__}: {e}")
+
+@router.post("/analyze")
+def analyze_banner(req: BannerAnalyzeRequest):
+    """
+    현수막 트렌드 분석 (LLM 기반)
+    - 입력: p_name, user_theme, keywords
+    - 출력: banner_trend (Markdown 텍스트, 3단락)
+    """
+    if analyze_banner_trend_with_llm is None:
+        raise HTTPException(
+            status_code=501,
+            detail="banner trend LLM service not available (import 실패 또는 openai 미설치)",
+        )
+
+    try:
+        banner_trend = analyze_banner_trend_with_llm(
+            p_name=req.p_name,
+            user_theme=req.user_theme,
+            keywords=req.keywords,
+        )
+        return _json_ok({"banner_trend": banner_trend})
+    except Exception as e:
+        # LLM 호출 에러, 키 미설정 등
+        raise HTTPException(
+            status_code=400,
+            detail=f"banner analyze failed: {type(e).__name__}: {e}",
+        )
