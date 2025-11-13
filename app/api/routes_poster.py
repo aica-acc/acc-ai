@@ -107,7 +107,8 @@ async def handle_prompt_generation(body: models.GeneratePromptRequest):
             body.theme, 
             body.analysis_summary,
             body.poster_trend_report,
-            body.strategy_report
+            body.strategy_report,
+            body.selected_formats
         )
         if "error" in prompt_options_data:
             raise Exception(f"마스터 프롬프트 생성 실패: {prompt_options_data['error']}")

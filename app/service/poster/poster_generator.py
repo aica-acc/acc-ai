@@ -13,8 +13,16 @@ if not OPENAI_API_KEY:
 else:
     openai.api_key = OPENAI_API_KEY
 
+# 규격
+FORMAT_MAP = {
+    "9:16": {"width": 896, "height": 1536, "title": "모바일 (9:16) 시안"},
+    "1:1": {"width": 1024, "height": 1024, "title": "인스타그램 (1:1) 시안"},
+    "3:4": {"width": 864, "height": 1152, "title": "A3 (3:4) 시안"},
+    "16:9": {"width": 1536, "height": 864, "title": "와이드 (16:9) 시안"}
+}
+
 # ----------------------------------------------------
-# [엔진 기능 1] 1단계: '전략 보고서' 생성기 (⭐️ v17: '네이버 2종 API' 융합)
+# [엔진 기능 1] 1단계: '전략 보고서' 생성기 
 # ----------------------------------------------------
 def create_strategy_report(
     user_theme, 
@@ -98,13 +106,14 @@ def create_master_prompt(
     user_theme, 
     analysis_summary,
     poster_trend_report,
-    strategy_report
+    strategy_report,
+    selected_formats
 ):
     """
-    (v30.1) [1단계 분석 결과] 3개를 모두 입력받아,
-    '포스터 디자인(일러스트)' 중심의 'v29 시안' 4개를 생성합니다.
+    [1단계 분석 결과] + [선택된 규격]을 입력받아,
+    '선택된 규격'의 개수만큼만 '동적'으로 프롬프트 시안을 생성합니다.
     """
-    print(f"  [poster_generator] AI 프롬프트 시안 (v30.1: '포스터 디자인' 강제) 생성 시작...")
+    print(f"  [poster_generator] AI 프롬프트 시안 생성 시작...")
     
     try:
         # --- 1. AI(GPT-4)에게 1단계 분석 결과 전달 ---
@@ -112,69 +121,55 @@ def create_master_prompt(
         poster_trend_string = json.dumps(poster_trend_report, ensure_ascii=False, indent=2)
         strategy_report_string = json.dumps(strategy_report, ensure_ascii=False, indent=2)
 
-        # ⭐️ [v30.1] AI 지시문(Prompt)을 파트너님의 '그림같은 느낌' 요구사항에 맞게 '강제'
-        system_prompt = """
+        # --- 2. 'selected_formats' 리스트로 'AI 시안 뼈대'를 동적 생성 ---
+        prompt_skeletons = []
+        for format_key in selected_formats:
+            if format_key in FORMAT_MAP:
+                format_data = FORMAT_MAP[format_key]
+                prompt_skeletons.append({
+                    "style_name": f"AI 제안: {format_data['title']}", # 예: "AI 제안: 모바일 (9:16) 시안"
+                    "width": format_data["width"],
+                    "height": format_data["height"],
+                    "visual_prompt_for_background": "(AI가 이 값을 채울 것입니다)",
+                    "suggested_text_style": "(AI가 이 값을 채울 것입니다)"
+                })
+
+        # 선택된 유효한 규격이 없으면 오류 반환
+        if not prompt_skeletons:
+            print("   ❌ 'poster_generator': 유효한 규격이 선택되지 않았습니다.")
+            return {"error": "No valid formats selected or provided."}
+
+        # 3. AI 지시문(Prompt)을 파트너님의 '그림같은 느낌' 요구사항에 맞게 
+        # F-string을 사용하여 '동적'으로 AI 지시문을 만듭니다
+
+        system_prompt = f"""
         당신은 30년 경력의 아트 디렉터입니다.
 
         [당신의 임무]
-        당신은 [1단계 분석 자료] 3개를 입력받습니다.
-        이 자료를 '반드시' 반영하여, '서로 다른' 스타일의 '4가지 규격별 시안'을 제안해야 합니다.
+        [1단계 분석 자료] 3개를 입력받아, 요청된 {len(prompt_skeletons)}개의 규격별 시안을 제안해야 합니다.
         각 시안은 '텍스트 없는 배경'과 그 배경에 '매칭되는 텍스트 스타일' 2가지로 구성됩니다.
 
         [1단계 분석 자료]
-        1. [기획서 요약]: 클라이언트의 핵심 요구사항 (타겟 고객, 핵심 프로그램, 비주얼 키워드 등)
-        2. [내부 DB 분석]: 과거 포스터(CSV) 분석 결과 (예: 'top_creativity_example')
-        3. [최종 융합 보고서]: '실시간 트렌드'와 '홍보 전략'(예: 릴스 챌린지)이 포함된 AI의 최종 전략 제안('strategy_text')
+        1. [기획서 요약]: 클라이언트의 핵심 요구사항 (타겟 고객, 비주얼 키워드 등)
+        2. [내부 DB 분석]: 과거 포스터(CSV) 분석 결과
+        3. [최종 융합 보고서]: '실시간 트렌드'와 '홍보 전략'이 포함된 AI의 최종 전략 제안
 
         [시안 생성 규칙 (매우 중요)]
-        1. 4개의 시안은 '서로 다른' 스타일이어야 하며, [1단계 분석 자료]에 '근거'해야 합니다.
-        
-        2. [v30.1 치명적 규칙]
-           모든 스타일 제안은 '사실적인 사진(photorealistic, cinematic, realistic, photo)' 스타일을 '절대' 제안해서는 안 됩니다.
-           모든 스타일 제안은 [1단계 분석 자료]를 기반으로, 다음 카테고리('illustration', 'graphic design', 'digital art', 'typography', 'abstract', 'minimalist') 중에서만 '창의적으로' 해석해야 합니다.
-           (예: [기획서 요약]의 '불꽃쇼' -> '화려한 '불꽃 일러스트'(O)', '추상적인 '그래픽 아트'(O)', "사실적인 '불꽃 사진'(X)")
+        1. 모든 스타일 제안은 '사실적인 사진(photorealistic)' 스타일을 '절대' 제안해서는 안 됩니다.
+        2. 모든 스타일 제안은 [1단계 분석 자료]를 기반으로, 'illustration', 'graphic design', 'digital art', 'typography', 'abstract', 'minimalist' 카테고리 중에서만 '창의적으로' 해석해야 합니다.
+        3. 'visual_prompt_for_background':
+           - 'bytedance/dreamina-3.1' 모델이 생성할 '텍스트가 없는(text-free)' 배경 프롬프트입니다.
+           - '일러스트'나 '그래픽 디자인' 스타일로 영문으로 묘사되어야 합니다.
+        4. 'suggested_text_style':
+           - 3번 배경 프롬프트(일러스트/그래픽)와 '매칭'되는 '텍스트 스타일 가이드'입니다. (예: "우아하고 얇은 명조 폰트, 금색")
 
-        3. 4개의 시안을 '4가지 다른 규격'에 각각 할당해야 합니다. (1:1, 9:16, 3:4, 16:9)
-
-        4. 'visual_prompt_for_background':
-           - 'bytedance/dreamina-3.1' 모델이 생성할 '텍스트가 없는(text-free, no letters)' 배경 프롬프트입니다.
-           - [v30.1 규칙]에 따라 '일러스트'나 '그래픽 디자인' 스타일로 묘사되어야 합니다.
-           - 각 규격에 맞는 '레이아웃'을 묘사해야 합니다. (예: "A tall 9:16 vertical composition...")
-
-        5. 'suggested_text_style':
-           - 4번 배경 프롬프트(일러스트/그래픽)와 '매칭'되는 '텍스트 스타일 가이드'입니다.
-           - (예: "굵고 거친 스트리트 폰트, 흰색, 검은색 외곽선 2px")
-           - (예: "우아하고 얇은 명조 폰트, 금색, 부드러운 그림자 효과")
-
-        [JSON 응답 형식]
-        {
+        [JSON 응답 형식 (⭐️ 요청된 {len(prompt_skeletons)}개 만큼만 생성)]
+        {{
           "prompt_options": [
-            {
-              "style_name": "AI 제안 1: [분석 근거 '일러스트' 스타일명] (1:1)",
-              "width": 1024, "height": 1024,
-              "visual_prompt_for_background": "(영어로 작성된 '텍스트 없는' 1:1 '일러스트/그래픽' 배경 프롬프트. 예: A vibrant retro illustration, 1:1 centered composition, for Instagram, text-free...)",
-              "suggested_text_style": "(1번 배경과 매칭되는 텍스트 스타일 가이드. 예: 'Playful rounded font, cream color, with a dark drop shadow')"
-            },
-            {
-              "style_name": "AI 제안 2: [다른 '디자인' 스타일명] (9:16)",
-              "width": 896, "height": 1536,
-              "visual_prompt_for_background": "(영어로 작성된 '텍스트 없는' 9:16 '일러스트/그래픽' 배경 프롬프트. 예: A minimalist graphic design poster, 9:16 vertical composition, for mobile story, text-free...)",
-              "suggested_text_style": "(2번 배경과 매칭되는 텍스트 스타일 가이드. 예: 'Clean sans-serif font, bold, black color')"
-            },
-            {
-              "style_name": "AI 제안 3: [다른 '아트' 스타일명] (3:4)",
-              "width": 864, "height": 1152,
-              "visual_prompt_for_background": "(영어로 작성된 '텍스트 없는' 3:4 '일러스트/그래픽' 배경 프롬프트...)",
-              "suggested_text_style": "(3번 배경과 매칭되는 텍스트 스타일 가이드...)"
-            },
-            {
-              "style_name": "AI 제안 4: [다른 '타이포' 스타일명] (16:9)",
-              "width": 1536, "height": 896,
-              "visual_prompt_for_background": "(영어로 작성된 '텍스트 없는' 16:9 '일러스트/그래픽' 배경 프롬프트...)",
-              "suggested_text_style": "(4번 배경과 매칭되는 텍스트 스타일 가이드...)"
-            }
+            // (AI가 이 뼈대를 기반으로 {len(prompt_skeletons)}개만큼 생성)
+            {json.dumps(prompt_skeletons, indent=2, ensure_ascii=False)}
           ]
-        }
+        }}
         """
         
         user_prompt = f"""
@@ -187,9 +182,9 @@ def create_master_prompt(
         [3. 최종 융합 보고서 (AI 전략 제안)]
         {strategy_report_string}
         ---
-        위 3가지 [1단계 분석 자료]를 '반드시' 읽고 '근거'하여, [JSON 응답 형식]에 맞는 '4가지 다른 스타일 + 4가지 다른 규격'의 시안을 생성해 주십시오.
+        위 3가지 [1단계 분석 자료]를 '반드시' 읽고 '근거'하여, [JSON 응답 형식]에 맞는 '시안'을 생성해 주십시오.
+        (⭐️ v31.1 규칙: 요청된 {len(prompt_skeletons)}개의 규격 {selected_formats}에 대해서만 생성해야 합니다.)
         (⭐️ v30.1 규칙: 모든 스타일은 '사진'이 아닌 '일러스트/그래픽 디자인' 중심이어야 합니다.)
-        (각 시안은 '텍스트 없는 배경 프롬프트'와 '텍스트 스타일 가이드'를 포함해야 합니다.)
         """
         
         client = openai.OpenAI()
@@ -201,7 +196,7 @@ def create_master_prompt(
         )
         
         ai_generated_data = json.loads(response.choices[0].message.content)
-        print("    - AI '4가지 규격 시안(v30.1)' 생성 완료.")
+        print(f"     - AI '{len(prompt_skeletons)}개 동적 규격 시안(v31.1)' 생성 완료.")
         
         return ai_generated_data
 
