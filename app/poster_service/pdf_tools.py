@@ -6,9 +6,9 @@ from pytrends.request import TrendReq
 import pandas as pd
 import json
 import requests
-from bs4 import BeautifulSoup
 import docx  # .docx 파일용
 import cloudconvert
+
 
 # --- API 키 설정 (OpenAI + CloudConvert) ---
 load_dotenv()
@@ -25,6 +25,7 @@ if not CLOUDCONVERT_API_KEY:
     print("    (HWP 파일 변환이 불가능합니다)")
 else:
     cloudconvert.configure(api_key=CLOUDCONVERT_API_KEY)
+
 # ----------------------------------------------------
 
 def analyze_pdf(pdf_file_path):
@@ -212,7 +213,6 @@ def analyze_pdf(pdf_file_path):
 def expand_keywords_with_ai(keywords_list):
     """
     AI(GPT)를 사용해, 주어진 키워드 리스트와 '연관된' 키워드를 4~5개 더 생성합니다.
-    (이 함수는 poster_service/pdf_tools.py에 있었으나, app/tools/pdf_tools.py로 이동)
     """
     print(f"  [pdf_tools] 4. AI 키워드 확장 시작: {keywords_list}")
     
@@ -242,8 +242,7 @@ def expand_keywords_with_ai(keywords_list):
     """
     
     try:
-        # (v31 업데이트: OPENAI_API_KEY는 pdf_tools 상단에서 이미 로드됨)
-        client = openai.OpenAI() 
+        client = openai.OpenAI()
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
