@@ -45,7 +45,6 @@ dependencies = [
     "nltk>=3.9.2",
     "yfinance>=0.2.66",
     "scikit-learn>=1.7.2",
-    "torch>=2.9.0",
     "transformers>=4.57.1",
     "sentence-transformers>=5.1.2",
     # --- 포스터 하베스터 전용 ---
