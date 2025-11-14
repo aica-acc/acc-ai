@@ -1,4 +1,4 @@
-from app.tools.pdf_tools import analyze_pdf
+from app.tools.proposal.pdf_tools import analyze_pdf
 from app.domain.festival.festival_plan import FestivalPlan
 
 class FestivalService:
