@@ -3,18 +3,18 @@ import json
 import tempfile
 from fastapi import APIRouter, Form, File, UploadFile, HTTPException
 
-# ⭐️ v31: Pydantic 모델 import
+
 from app.domain.poster import poster_model as models
 
 # ----------------------------------------------------
 # 1. '엔진' 파일들을 import (v29/v30.1)
 # ----------------------------------------------------
 try:
-    from app.tools import pdf_tools           # (v17: 문서 분석)
-    from app.service.poster import poster_generator    # (v30.1: '그림같은' 스타일 가이드 제안)
+    from app.tools import pdf_tools           # ( 문서 분석)
+    from app.service.poster import poster_generator    # (그림같은' 스타일 가이드 제안)
     from app.service.poster import trend_analyzer      # (CSV 내부 DB)
-    from app.service.poster import image_generator     # (v29: '텍스트 없는' 배경 생성)
-    from app.service.poster import trend_search        # (v17: 외부 트렌드)
+    from app.service.poster import image_generator     # ('텍스트 없는' 배경 생성)
+    from app.service.poster import trend_search        # ( 외부 트렌드)
 except ImportError as e:
     print(f"🚨 [router.py] 치명적 오류: 모듈 import 실패! {e}")
     exit()
@@ -50,19 +50,26 @@ async def handle_analysis_request(
         
         final_response_to_frontend = {}
 
-        # (v17 로직 100% 동일)
+        # --- 1. 기획서 분석  ---
         pdf_data = pdf_tools.analyze_pdf(temp_file_path)
         final_response_to_frontend["analysis_summary"] = pdf_data
         if "error" in pdf_data:
             raise Exception(f"PDF 분석 실패: {pdf_data['error']}")
         
+        # --- 2. 파생 키워드 (AI) ---
         keywords_from_pdf = pdf_data.get("visualKeywords", [])
         base_keywords = list(dict.fromkeys(user_keywords_list + keywords_from_pdf))
         expanded_keywords = pdf_tools.expand_keywords_with_ai(base_keywords)
         final_response_to_frontend["expanded_keywords"] = expanded_keywords
         
+        # --- 3. '내부 CSV' 트렌드만 사용 ---
+        print(" 1. 내부 DB (CSV) 트렌드 분석 시작...")
         poster_trend_data = trend_analyzer.get_poster_trends(expanded_keywords) 
         final_response_to_frontend["poster_trend_report"] = poster_trend_data
+
+        # google_trend_data = {}
+        # naver_datalab_data = {}
+        # naver_search_data = {}
         
         main_keyword = user_keywords_list[0] if user_keywords_list else keywords_from_pdf[0] if keywords_from_pdf else "축제"
         google_trend_data = trend_search.get_google_trends(base_keywords)
@@ -72,7 +79,9 @@ async def handle_analysis_request(
         strategy_query = f"{main_keyword} 홍보 방법"
         naver_search_data = trend_search.get_naver_search_content(strategy_query)
         final_response_to_frontend["naver_search_data"] = naver_search_data
-        
+        print(" 'Naver/Google' 외부 트렌드 API 호출을 '일시 중지'합니다.")
+
+        # '전략 보고서'는'기획서' + '내부 CSV' 데이터만으로 생성.
         report_3_json = poster_generator.create_strategy_report(
             theme, pdf_data, poster_trend_data,   
             google_trend_data, naver_datalab_data, naver_search_data    
@@ -81,7 +90,7 @@ async def handle_analysis_request(
         if "error" in report_3_json:
             raise Exception(f"전략 보고서 생성 실패: {report_3_json['error']}")
         
-        print("--- ✅ [FastAPI 서버] 1단계 '분석' (v17 리팩토링) 완료 ---")
+        print("--- [FastAPI 서버] 1단계 '분석' 완료 ---")
         final_response_to_frontend["status"] = "success"
         
         return final_response_to_frontend
@@ -94,14 +103,14 @@ async def handle_analysis_request(
             os.remove(temp_file_path) # 임시 파일 삭제
 
 # ----------------------------------------------------
-# [API 2] ⭐️ 2단계 UI: "AI 프롬프트 생성" 버튼용 (v30.1)
+# [API 2] ⭐️ 2단계 UI: "AI 프롬프트 생성" 버튼용
 # ----------------------------------------------------
 @router.post("/generate-prompt")
 async def handle_prompt_generation(body: models.GeneratePromptRequest):
-    print("\n--- [FastAPI 서버] /generate-prompt (2단계 v30.1) 요청 수신 ---")
+    print("\n--- [FastAPI 서버] /generate-prompt  요청 수신 ---")
     
     try:
-        print("    [1/1] AI 프롬프트 시안 (v30.1 - '포스터 디자인' 강제) 생성 시작...")
+        print("    [1/1] AI 프롬프트 시안 '포스터 디자인' 강제 생성 시작...")
         
         prompt_options_data = poster_generator.create_master_prompt(
             body.theme, 
@@ -121,7 +130,7 @@ async def handle_prompt_generation(body: models.GeneratePromptRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ----------------------------------------------------
-# [API 3] ⭐️ 3단계 UI: "홍보물 생성" 버튼용 (v29 - 하이브리드)
+# [API 3] 3단계 UI: "홍보물 생성" 버튼용 
 # ----------------------------------------------------
 @router.post("/create-image")
 async def handle_image_creation(body: models.CreateImageRequest):
@@ -134,7 +143,7 @@ async def handle_image_creation(body: models.CreateImageRequest):
     print("\n--- [FastAPI 서버] /create-image (3단계 최종 생성 v29 - 하이브리드) 요청 수신 ---")
     
     try:
-        # ⭐️ v31: Pydantic 모델(body)에서 v29 데이터를 바로 추출
+        #  Pydantic 모델(body)에서 데이터를 바로 추출
         selected_prompt_data = body.selected_prompt
         analysis_summary = body.analysis_summary
         
@@ -146,7 +155,7 @@ async def handle_image_creation(body: models.CreateImageRequest):
         # --- 1. (AI) '텍스트 없는' 배경 생성 ---
         print(f"    [1/3] 'image_generator' (v29 - {width}x{height} 배경) 엔진 호출 시작...")
         
-        # ⭐️ 'poster_service' 폴더 내에 이미지 저장
+        # 'poster_service' 폴더 내에 이미지 저장
         output_filename = f"background_final_{width}x{height}.png"
         output_filepath = os.path.join(SCRIPT_DIR, output_filename)
         
@@ -154,12 +163,12 @@ async def handle_image_creation(body: models.CreateImageRequest):
             background_prompt,
             width,
             height,
-            output_filepath # ⭐️ v31: 전체 경로 전달
+            output_filepath # 전체 경로 전달
         )
         if "error" in bg_result:
             raise Exception(bg_result['error'])
         
-        # ⭐️ v31: FastAPI는 Request 객체에서 host를 가져와야 함 (main.py에서 마운트한 경로)
+        #  FastAPI는 Request 객체에서 host를 가져와야 함 (main.py에서 마운트한 경로)
         image_url = f"/images/{output_filename}" # ⭐️ main.py의 /images 경로와 일치
         print(f"    [1/3] '배경' 생성 완료: {image_url}")
 

@@ -2,7 +2,37 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 # --- 1단계 (/analyze) ---
+class PosterTheme(BaseModel):
+    """1단계 'theme' 입력"""
+    theme: str = Field(..., description="사용자가 선택한 핵심 테마 (예: 감성/서정형)")
 
+class AnalysisSummary(BaseModel):
+    """1단계 Python 'analysis_summary' 객체 (Java DTO와 동일)"""
+    title: str
+    date: str
+    location: str
+    host: Optional[str] = None
+    organizer: Optional[str] = None
+    targetAudience: Optional[str] = None
+    contactInfo: Optional[str] = None
+    directions: Optional[str] = None
+    programs: Optional[List[str]] = []
+    events: Optional[List[str]] = []
+    visualKeywords: Optional[List[str]] = []
+    concept: Optional[str] = None
+
+class PosterTrendReport(BaseModel):
+    """1D단계 Python 'poster_trend_report' 객체"""
+    status: str
+    summary: Optional[str] = None
+    top_creativity_example: Optional[Dict[str, Any]] = None
+
+class StrategyReport(BaseModel):
+    """1단계 Python 'strategy_report' 객체 (Java DTO와 동일)"""
+    strategy_text: str
+    proposed_content: Dict[str, Any]
+    visual_reference_path: Optional[str] = None
+    
 # --- 2단계 (/generate-prompt) ---
 # 1단계의 전체 결과(JSON)를 받기 위한 모델
 class GeneratePromptRequest(PosterTheme, AnalysisSummary, PosterTrendReport, StrategyReport):
