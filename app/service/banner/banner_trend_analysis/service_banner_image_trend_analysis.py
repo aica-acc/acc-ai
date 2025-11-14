@@ -110,7 +110,7 @@ def analyze_banner_image_trend(
     p_name: str,
     user_theme: str,
     keywords: List[str],
-    top_k: int = 5,
+    top_k: int = 4,
 ) -> Dict[str, Any]:
     """
     - related_festivals: 입력과 연관도 점수가 높은 축제 상위 top_k개
