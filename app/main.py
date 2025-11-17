@@ -1,6 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+<<<<<<< Updated upstream
 from app.api import routes_festival, routes_images, routes_poster, routes_proposal, routes_total_trend
+=======
+from app.api import routes_festival, routes_images, routes_poster, routes_banner
+from fastapi.staticfiles import StaticFiles
+>>>>>>> Stashed changes
 
 app = FastAPI(title="Festival Promotion API")
 
@@ -9,6 +14,14 @@ app.include_router(routes_images.router)
 app.include_router(routes_poster.router)
 app.include_router(routes_proposal.router)
 # app.include_router(routes_total_trend.router)
+
+# app/api/data 폴더를 /static 이라는 URL로 매핑
+app.mount(
+    "/static",
+    StaticFiles(directory="app/data"),
+    name="static",
+)
+
 
 @app.get("/")
 def root():
