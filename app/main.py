@@ -1,11 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-<<<<<<< Updated upstream
-from app.api import routes_festival, routes_images, routes_poster, routes_proposal, routes_total_trend
-=======
 from app.api import routes_festival, routes_images, routes_poster, routes_banner
 from fastapi.staticfiles import StaticFiles
->>>>>>> Stashed changes
 
 app = FastAPI(title="Festival Promotion API")
 
