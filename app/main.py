@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import routes_festival, routes_images, routes_poster, routes_banner, routes_proposal, routes_poster_khs
+from app.api import routes_festival, routes_images, routes_poster, routes_banner, routes_proposal, routes_poster_khs, routes_banner_khs
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="Festival Promotion API")
@@ -11,6 +11,7 @@ app.include_router(routes_poster.router)
 app.include_router(routes_banner.router)
 app.include_router(routes_proposal.router)
 app.include_router(routes_poster_khs.router)
+app.include_router(routes_banner_khs.router)
 # app.include_router(routes_total_trend.router)
 
 # app/api/data 폴더를 /static 이라는 URL로 매핑
