@@ -4,10 +4,9 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import routes_festival, routes_images, routes_poster, routes_proposal, routes_total_trend
+from app.api import routes_festival, routes_poster, routes_proposal, routes_total_trend, routes_cardnews_images
 from fastapi.staticfiles import StaticFiles
 import os
-from app.api import routes_festival, routes_poster, routes_proposal, routes_total_trend, routes_cardnews_images
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(BASE_DIR / ".env")
