@@ -10,7 +10,7 @@ from app.domain.poster import poster_model as models
 # 1. '엔진' 파일들을 import (v29/v30.1)
 # ----------------------------------------------------
 try:
-    from app.tools import pdf_tools           # (v17: 문서 분석)
+    from app.tools.proposal import pdf_tools           # (v17: 문서 분석)
     from app.service.poster import poster_generator    # (v30.1: '그림같은' 스타일 가이드 제안)
     from app.service.poster import trend_analyzer      # (CSV 내부 DB)
     from app.service.poster import image_generator     # (v29: '텍스트 없는' 배경 생성)

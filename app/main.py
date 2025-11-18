@@ -4,6 +4,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.api import routes_festival, routes_images, routes_poster, routes_proposal, routes_total_trend
 from app.api import routes_cardnews_images, routes_festival, routes_poster
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -13,6 +14,8 @@ app = FastAPI(title="Festival Promotion API")
 app.include_router(routes_festival.router)
 app.include_router(routes_cardnews_images.router)
 app.include_router(routes_poster.router)
+app.include_router(routes_proposal.router)
+# app.include_router(routes_total_trend.router)
 
 @app.get("/")
 def root():
