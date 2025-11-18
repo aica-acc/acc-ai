@@ -16,7 +16,9 @@ load_dotenv()  # .env 로드
 SERP_API_KEY = os.getenv("SERPAPI_API_KEY")
 
 # 프로젝트 루트 기준 data/카드뉴스
-BASE_DIR = (Path(__file__).resolve().parents[2] / "data" / "카드뉴스").resolve()
+ACC_ROOT = Path(__file__).resolve().parents[4]
+
+BASE_DIR = (ACC_ROOT / "data" / "cardnews" / "참조데이터").resolve()
 
 # --------------- 유틸 ---------------
 def ensure_dir(path: Path):

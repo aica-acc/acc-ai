@@ -1,12 +1,17 @@
-import asyncio
-from app.tools.cardnews.festival_loader import load_festivals, filter_festivals_by_region
-from app.service.cardnews.cardnews_score_service import score_cardnews_image
-from app.tools.cardnews.image_loader import download_cardnews_images
-from pathlib import Path
 import json
+import asyncio
+from pathlib import Path
+
+from app.tools.cardnews.festival_loader import load_festivals, filter_festivals_by_region
+from app.service.cardnews.cardnews_score_service import hybrid_cardnews_score
+from app.tools.cardnews.image_loader import download_cardnews_images
 
 async def process_cardnews_batch(csv_path: str, region: str, limit_festivals: int, limit_images: int):
-    """🎯 축제별 카드뉴스 이미지 일괄 수집 및 점수화"""
+    """
+    🎯 축제별 카드뉴스 이미지 일괄 수집 및 하이브리드 점수화
+    - CLIP + LLM 기반 점수 산출
+    - text_prompt=None (자동 배치 모드 → semantic_fit 제외)
+    """
     festivals = load_festivals(csv_path)
     target_list = filter_festivals_by_region(festivals, region, limit_festivals)
 
@@ -31,10 +36,11 @@ async def process_cardnews_batch(csv_path: str, region: str, limit_festivals: in
         scored_records = []
         for rec in records:
             try:
-                score = score_cardnews_image(rec["thumbnail_path"])
+                image_path = rec["file_path"]
+                score = hybrid_cardnews_score(image_path, text_prompt=None)  # 자동배치: 주제적합도 제외
                 scored_records.append({
                     **rec,
-                    "score": score.dict()
+                    "score": score.model_dump()
                 })
             except Exception as e:
                 scored_records.append({

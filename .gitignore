@@ -20,8 +20,10 @@ wheels/
 *.png
 *.pdf
 *.webp
-*ttf
+*.ttf
+*.ttc
+*.otf
+*.woff
 
 # test 코드
 __init__.py
-
