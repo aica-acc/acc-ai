@@ -1061,6 +1061,15 @@ wheels = [
 ]
 
 [[package]]
+name = "google-search-results"
+version = "2.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/77/30/b3a6f6a2e00f8153549c2fa345c58ae1ce8e5f3153c2fe0484d444c3abcb/google_search_results-2.4.2.tar.gz", hash = "sha256:603a30ecae2af8e600b22635757a6df275dad4b934f975e67878ccd640b78245", size = 18818, upload-time = "2023-03-10T11:13:09.953Z" }
+
+[[package]]
 name = "googleapis-common-protos"
 version = "1.70.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4313,6 +4322,18 @@ wheels = [
 ]
 
 [[package]]
+name = "serpapi"
+version = "0.1.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f0/fa/3fd8809287f3977a3e752bb88610e918d49cb1038b14f4bc51e13e594197/serpapi-0.1.5.tar.gz", hash = "sha256:b9707ed54750fdd2f62dc3a17c6a3fb7fa421dc37902fd65b2263c0ac765a1a5", size = 14191, upload-time = "2023-11-01T14:00:43.602Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/6a/21deade04100d64844e494353a5d65e7971fbdfddf78eb1f248423593ad0/serpapi-0.1.5-py2.py3-none-any.whl", hash = "sha256:6467b6adec1231059f754ccaa952b229efeaa8b9cae6e71f879703ec9e5bb3d1", size = 10966, upload-time = "2023-11-01T14:00:38.885Z" },
+]
+
+[[package]]
 name = "setuptools"
 version = "80.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4879,6 +4900,7 @@ dependencies = [
     { name = "google-api-python-client" },
     { name = "google-auth" },
     { name = "google-auth-oauthlib" },
+    { name = "google-search-results" },
     { name = "langchain" },
     { name = "langchain-community" },
     { name = "langchain-core" },
@@ -4907,9 +4929,9 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "selenium" },
     { name = "sentence-transformers" },
+    { name = "serpapi" },
     { name = "streamlit" },
     { name = "tiktoken" },
-    { name = "torch" },
     { name = "tqdm" },
     { name = "transformers" },
     { name = "ultralytics" },
@@ -4935,6 +4957,7 @@ requires-dist = [
     { name = "google-api-python-client", specifier = ">=2.185.0" },
     { name = "google-auth", specifier = ">=2.41.1" },
     { name = "google-auth-oauthlib", specifier = ">=1.2.2" },
+    { name = "google-search-results", specifier = ">=2.4.2" },
     { name = "langchain", specifier = ">=0.3.27" },
     { name = "langchain-community", specifier = ">=0.3.31" },
     { name = "langchain-core", specifier = ">=0.3.79" },
@@ -4963,9 +4986,9 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.7.2" },
     { name = "selenium", specifier = ">=4.27.1" },
     { name = "sentence-transformers", specifier = ">=5.1.2" },
+    { name = "serpapi", specifier = ">=0.1.5" },
     { name = "streamlit", specifier = ">=1.50.0" },
     { name = "tiktoken", specifier = ">=0.12.0" },
-    { name = "torch", specifier = "==2.8.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformers", specifier = ">=4.57.1" },
     { name = "ultralytics", specifier = ">=8.3.214" },
