@@ -47,9 +47,8 @@ def get_openai_client() -> OpenAI:
 
 
 # -------------------------------------------------------------
-# 1) 한글 축제 정보 → 영어 번역
+# 한글 포함 여부 유틸
 # -------------------------------------------------------------
-
 def _contains_hangul(text: str) -> bool:
     """문자열에 한글(가-힣)이 하나라도 포함되어 있는지 확인."""
     for ch in str(text):
@@ -57,6 +56,10 @@ def _contains_hangul(text: str) -> bool:
             return True
     return False
 
+
+# -------------------------------------------------------------
+# 1) 한글 축제 정보 → 영어 번역 (필드별로 한글이 있을 때만 번역)
+# -------------------------------------------------------------
 def _translate_festival_ko_to_en(
     festival_name_ko: str,
     festival_period_ko: str,
@@ -168,9 +171,8 @@ def _translate_festival_ko_to_en(
         }
 
 
-
 # -------------------------------------------------------------
-# 2) 영어 정보 → 최종 프롬프트 문자열
+# 2) 영어 정보 → 최종 프롬프트 문자열 (축제 씬 스타일)
 # -------------------------------------------------------------
 def _build_road_banner_prompt_en(
     name_en: str,
@@ -180,6 +182,10 @@ def _build_road_banner_prompt_en(
     """
     번역된 영어 축제 정보(제목/기간/장소)를 사용해
     4:1 도로용 현수막 생성을 위한 영어 프롬프트를 만든다.
+
+    - 참고 포스터의 색감/조명/분위기를 따오되
+    - 평면 그라데이션 배경이 아니라, 인물/무대/머드/군중 등이 있는
+      '축제 씬' 스타일의 가로 배너 구성을 유도한다.
     """
 
     prompt_lines: list[str] = []
@@ -200,10 +206,19 @@ def _build_road_banner_prompt_en(
 
     prompt_lines.append("")  # 빈 줄
 
-    # 배경에 대한 지시
+    # 🔥 배경: 축제 씬 스타일로 유도
     prompt_lines.append(
-        "Create a clean, simple background that matches the mood and colors of the reference poster, "
-        "but is not too busy, so the text remains extremely easy to read from far away."
+        "Create a wide, cinematic festival scene inspired by the reference poster, with lively characters, depth, and a strong sense of motion and energy."
+    )
+    prompt_lines.append(
+        "Visually emphasize the main theme and atmosphere of the event shown in the reference (for example, mud, snow, lights, rides, stages, or crowds, depending on the poster)."
+    )
+    prompt_lines.append(
+        "Use a polished 3D illustration or stylized animation look rather than a flat gradient background."
+    )
+    prompt_lines.append(
+        "Place most of the detailed scene, characters, and objects in the upper and lower areas of the banner, "
+        "and keep a softer, lower-detail band across the center so the text remains extremely easy to read from far away."
     )
 
     prompt_lines.append("")  # 빈 줄
@@ -251,10 +266,10 @@ def write_road_banner(
     도로(4:1) 가로 현수막용 Seedream 입력 JSON을 생성한다.
 
     입력:
-        poster_image_url   : 참고용 포스터 이미지 URL
-        festival_name_ko   : 축제명 (한글)
-        festival_period_ko : 축제 기간 (한글)
-        festival_location_ko: 축제 장소 (한글)
+        poster_image_url    : 참고용 포스터 이미지 URL
+        festival_name_ko    : 축제명 (한글)
+        festival_period_ko  : 축제 기간 (한글 또는 숫자/영문)
+        festival_location_ko: 축제 장소 (한글 또는 영문)
 
     출력 (Seedream / Replicate 등에 바로 넣을 수 있는 dict):
 
@@ -276,7 +291,7 @@ def write_road_banner(
     }
     """
 
-    # 1) 한글 축제 정보 → 영어 번역
+    # 1) 한글 축제 정보 → 영어 번역 (필드별 한글 여부에 따라 번역/유지)
     translated = _translate_festival_ko_to_en(
         festival_name_ko=festival_name_ko,
         festival_period_ko=festival_period_ko,
@@ -450,7 +465,7 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
         "height": height,
         "prompt": prompt,
         "max_images": max_images,
-        "image_input": [image_file],  # ✅ 실제 Replicate에는 파일 객체로
+        "image_input": [image_file],  # Replicate에는 실제 파일 객체로 전달
         "aspect_ratio": aspect_ratio,
         "enhance_prompt": enhance_prompt,
         "sequential_image_generation": sequential_image_generation,
