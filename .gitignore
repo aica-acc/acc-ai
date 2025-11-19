@@ -21,6 +21,7 @@ wheels/
 *.pdf
 *.webp
 *ttf
+*result.txt
 
 # test 코드
 __init__.py
