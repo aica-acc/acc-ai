@@ -12,6 +12,7 @@ except ImportError as e:
     print(f"🚨 모듈 import 실패: {e}")
     exit()
 
+# 🚨 [핵심] Java가 보내는 주소와 맞추기 위해 prefix를 비웁니다.
 router = APIRouter(prefix="", tags=["Project Poster Generation"])
 SAVE_DIR = r"C:\final_project\ACC\acc-ai\홍보물"
 
@@ -21,55 +22,62 @@ if not os.path.exists(SAVE_DIR):
 # [API 1] Analyze
 @router.post("/analyze/proposal")
 async def handle_analysis_request(theme: str = Form(...), keywords: str = Form(...), title: str = Form(...), file: UploadFile = File(...)):
-    # ... (기존 코드 유지) ...
-    # (파일 내용 생략 - 기존 analyze 코드 그대로 두세요)
-    pass
-
-# [API 2] Generate Prompt (규격 선택 제거)
-@router.post("/generate-prompt")
-async def handle_prompt_generation(body: models.GeneratePromptRequest):
-    print("\n--- [FastAPI 서버] /generate-prompt 요청 수신 ---")
+    print("\n--- [FastAPI 서버] /analyze/proposal 요청 수신 ---")
     try:
-        # 🚨 [수정] selected_formats 인자 삭제
-        result = poster_generator.create_master_prompt(
-            body.theme, body.analysis_summary, body.poster_trend_report, body.strategy_report
-        )
-        # v2 JSON 구조 그대로 반환
-        return result
+        _, ext = os.path.splitext(file.filename)
+        temp_path = f"temp_upload{ext}"
+        with open(temp_path, "wb") as f:
+            f.write(await file.read())
+            
+        pdf_data = pdf_tools.analyze_pdf(temp_path)
+        if os.path.exists(temp_path): os.remove(temp_path)
+        
+        return {
+            "status": "success",
+            "analysis_summary": pdf_data,
+            "poster_trend_report": {"status": "success"},
+            "strategy_report": {"strategy_text": "Strategy...", "proposed_content": {}}
+        }
     except Exception as e:
         print(f"🚨 오류: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# [API 3] Create Image (DALL-E 3)
+# [API 2] Generate Prompt (규격 선택 기능 복구)
+@router.post("/generate-prompt")
+async def handle_prompt_generation(body: models.GeneratePromptRequest):
+    print("\n--- [FastAPI 서버] /generate-prompt 요청 수신 ---")
+    try:
+        # poster_generator가 { "prompt_options_data": ... } 형태가 아닌 순수 데이터를 반환하도록 조정
+        result = poster_generator.create_master_prompt(
+            body.theme, body.analysis_summary, body.poster_trend_report, body.strategy_report, body.selected_formats
+        )
+        
+        # Java/프론트엔드가 기대하는 형태로 감싸서 반환
+        return {"status": "success", "prompt_options_data": result}
+    except Exception as e:
+        print(f"🚨 오류: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# [API 3] Create Image (Flux)
 @router.post("/create-image")
 async def handle_image_creation(body: models.CreateImageRequest):
     print("\n--- [FastAPI 서버] /create-image 요청 수신 ---")
     try:
         selected_data = body.selected_prompt
-        analysis_data = body.analysis_summary # 분석 요약 정보
         
-        # 🚨 [핵심] 한글 텍스트 추출
-        title_korean = analysis_data.get("title", "")
-        date_korean = analysis_data.get("date", "")
-        location_korean = analysis_data.get("location", "")
-
-        # 1. 프롬프트 최적화 및 번역
-        raw_prompt = selected_data.visual_prompt
-        final_prompt = image_generator.translate_to_english(
-            raw_prompt, 
-            title_korean, 
-            date_korean, 
-            location_korean
-        )
+        # 1. 프롬프트 번역
+        raw_prompt = selected_data.visual_prompt_for_background
+        final_prompt = image_generator.translate_to_english(raw_prompt)
         
-        # 2. 이미지 생성
+        # 2. 규격 (선택된 옵션의 사이즈 사용)
         width = selected_data.width
         height = selected_data.height
         
-        final_filename = f"poster_v2_{selected_data.style_name[:5].strip()}.png"
+        final_filename = f"flux_{width}x{height}.png"
         final_filepath = os.path.join(SAVE_DIR, final_filename)
         
-        result = image_generator.generate_image_dalle3(
+        # 3. 이미지 생성
+        result = image_generator.generate_image_replicate(
             prompt=final_prompt,
             width=width,
             height=height,
@@ -79,13 +87,13 @@ async def handle_image_creation(body: models.CreateImageRequest):
         if "error" in result:
             raise Exception(result['error'])
 
-        image_url = f"/poster-images/{os.path.basename(final_filepath)}"
+        image_url = f"/poster-images/{final_filename}"
 
         return {
             "status": "success",
             "image_url": image_url,
-            "text_data": selected_data.text_content, # 한글 텍스트 반환
-            "style_guide": f"DALL-E 3 Generated (Style: {selected_data.style_name})"
+            "text_data": body.analysis_summary,
+            "style_guide": f"Flux Generated (Style: {selected_data.style_name})"
         }
     except Exception as e:
         print(f"🚨 오류: {e}")
