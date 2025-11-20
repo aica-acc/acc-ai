@@ -5,7 +5,7 @@ from fastapi import APIRouter, Form, File, UploadFile, HTTPException
 from app.domain.poster import poster_model as models
 
 try:
-    from app.tools import pdf_tools           
+    from app.tools.proposal import pdf_tools           
     from app.service.poster import poster_generator    
     from app.service.poster import trend_analyzer      
     from app.service.poster import image_generator 
@@ -131,3 +131,4 @@ async def handle_image_creation(body: models.CreateImageRequest):
     except Exception as e:
         print(f"🚨 오류: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    
