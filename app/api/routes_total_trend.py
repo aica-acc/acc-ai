@@ -61,7 +61,9 @@ async def analyze_total_trend(
         # ================================
         # 5) YOUTUBE TREND
         # ================================
+        
         youtube_trend = run_youtube_trend(keyword=keyword)
+        
 
          # 🧩 이미지 경로 로컬 → URL 변환
         for item in youtube_trend:

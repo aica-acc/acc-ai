@@ -70,6 +70,7 @@ dependencies = [
     "clip",
     "accelerate>=1.11.0",
     "pillow>=11.3.0",
+    "urllib3<2.0",
 ]
 
 [tool.uv.sources]
