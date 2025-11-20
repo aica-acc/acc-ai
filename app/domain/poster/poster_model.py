@@ -3,14 +3,22 @@ from typing import List, Optional, Dict, Any
 
 # --- 1단계 (/analyze) ---
 class PosterTheme(BaseModel):
-    theme: str = Field(..., description="테마")
+    theme: str
 
 class AnalysisSummary(BaseModel):
-    # ... (생략) ...
     title: str
     date: str
     location: str
-    # ... (나머지 필드) ...
+    host: Optional[str] = None
+    organizer: Optional[str] = None
+    targetAudience: Optional[str] = None
+    contactInfo: Optional[str] = None
+    directions: Optional[str] = None
+    programs: Optional[List[str]] = []
+    events: Optional[List[str]] = []
+    visualKeywords: Optional[List[str]] = []
+    concept: Optional[str] = None
+    summary: Optional[str] = None
 
 class PosterTrendReport(BaseModel):
     status: str
@@ -23,7 +31,6 @@ class StrategyReport(BaseModel):
     visual_reference_path: Optional[str] = None
 
 # --- 2단계 (/generate-prompt) ---
-# 🚨 [중요] 상속 제거된 상태 가정 (422 근본 원인 해결)
 class GeneratePromptRequest(BaseModel):
     theme: str
     analysis_summary: Dict[str, Any]
@@ -42,10 +49,13 @@ class SelectedPromptData(BaseModel):
     style_name: str
     width: int = 1024
     height: int = 1792
-    visual_prompt: str
-    suggested_text_style: str
-    text_content: TextContent
+    # 두 필드 다 받아주도록 설정 (호환성)
+    visual_prompt: Optional[str] = None
+    visual_prompt_for_background: Optional[str] = None
+    suggested_text_style: str         
+    text_content: Optional[TextContent] = None
 
 class CreateImageRequest(BaseModel):
-    selected_prompt: SelectedPromptData
+    # 단일 객체 -> 리스트 형태로 변경 (4개 한 번에 받음)
+    prompt_options: List[SelectedPromptData]
     analysis_summary: Dict[str, Any]
