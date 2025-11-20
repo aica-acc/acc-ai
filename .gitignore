@@ -20,6 +20,7 @@ wheels/
 *.png
 *.pdf
 *.webp
+*.txt
 *.ttf
 *.ttc
 *.otf
