@@ -22,7 +22,7 @@ wheels/
 *.webp
 *ttf
 *otf
-*txt
+*.txt
 
 # test 코드
 __init__.py
