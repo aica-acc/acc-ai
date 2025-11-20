@@ -7,7 +7,7 @@ CSV_PATH = "poster_scores_korean_progress.csv" # 1. CSV DB 경로
 # ( 참고: 이 CSV 파일은 app.py가 있는 'src' 폴더가 아니라,
 #  'uv_festival' 최상위 폴더에 있어야 한다.
 #  만약 'src' 폴더 안에 있다면 CSV_PATH = "poster_scores_korean_progress.csv"로 수정)
-CSV_FULL_PATH = os.path.join(os.path.dirname(__file__), '..', CSV_PATH) 
+CSV_FULL_PATH = os.path.join(os.path.dirname(__file__), CSV_PATH)
 
 warnings.filterwarnings("ignore", 'This pattern is interpreted as a regular expression')
 
