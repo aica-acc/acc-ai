@@ -7,9 +7,19 @@ app/service/banner_khs/make_road_banner.py
 역할
 - 참고용 포스터 이미지(URL)와 축제 정보(한글)를 입력받아서
   1) OpenAI LLM으로 축제명/기간/장소를 영어로 번역하고
-  2) 포스터 이미지와 어울리는 4:1 가로 현수막을 만들도록 지시하는 영어 프롬프트를 작성한 뒤
-  3) bytedance/seedream-4(또는 호환 모델)에 줄 입력 JSON(dict)을 만들어 반환한다. (write_road_banner)
+  2) 포스터 이미지를 시각적으로 분석해서 "축제 씬 묘사"를 영어로 만든 뒤
+  3) 한글 자리수에 맞춘 플레이스홀더 텍스트(라틴 알파벳 시퀀스)를 사용해서
+     4:1 도로용 현수막 프롬프트를 조립한다. (write_road_banner)
   4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 생성하고 저장한다. (create_road_banner)
+
+특징
+- 나중에 편집툴에서 한글로 교체할 수 있도록,
+  실제로 그려지는 텍스트는
+    * 축제명  : 한글 자릿수만큼 A, B, C, ... (A부터 시작하는 대문자 시퀀스)
+    * 축제기간: 숫자/기호는 그대로, 한글만 라틴 문자 시퀀스(기본 C부터)
+    * 축제장소: 한글 자릿수만큼 B, C, D, ... (B부터 시작하는 대문자 시퀀스)
+  로 마스킹해서 넘긴다.
+- 축제명이 가장 크고(배너 너비의 절반 정도 차지), 기간/장소는 그보다 작게 나오도록 프롬프트에 명시한다.
 
 전제 환경변수
 - OPENAI_API_KEY          : OpenAI API 키
@@ -20,8 +30,9 @@ app/service/banner_khs/make_road_banner.py
 
 from __future__ import annotations
 
-import json
 import os
+import json
+import base64
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -30,6 +41,8 @@ from typing import Any, Dict
 import requests
 import replicate
 from openai import OpenAI
+import time
+from replicate.exceptions import ModelError
 
 
 # -------------------------------------------------------------
@@ -47,18 +60,73 @@ def get_openai_client() -> OpenAI:
 
 
 # -------------------------------------------------------------
-# 한글 포함 여부 유틸
+# 한글 포함 여부 + 자리수 플레이스홀더 유틸
 # -------------------------------------------------------------
+_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
 def _contains_hangul(text: str) -> bool:
     """문자열에 한글(가-힣)이 하나라도 포함되어 있는지 확인."""
-    for ch in str(text):
+    for ch in str(text or ""):
         if "가" <= ch <= "힣":
             return True
     return False
 
 
+def _build_placeholder_from_hangul(text: str, mask_char: str) -> str:
+    """
+    문자열에서 한글(가-힣)만 라틴 대문자 시퀀스로 치환하고,
+    숫자/영문/공백/기호 등은 그대로 둔다.
+
+    - mask_char: 시퀀스를 시작할 기준 문자.
+      예) mask_char='A' → A,B,C,D,E,F,...
+          mask_char='B' → B,C,D,E,F,G,...
+
+    예:
+      text="2025 보령머드축제", mask_char='A' → "2025 ABCDEF"
+      text="보령시 대천해수욕장 일대", mask_char='B' → "BCDE FGHIJKLM NO"
+    """
+    if not text:
+        return ""
+
+    mask_char = (mask_char or "A").upper()
+    try:
+        start_idx = _ALPHABET.index(mask_char)
+    except ValueError:
+        start_idx = 0
+
+    idx = start_idx
+    result: list[str] = []
+
+    for ch in str(text):
+        if "가" <= ch <= "힣":
+            # 한글 하나당 서로 다른 대문자로 매핑
+            result.append(_ALPHABET[idx % len(_ALPHABET)])
+            idx += 1
+        else:
+            # 숫자/기호/공백 등은 그대로 유지
+            result.append(ch)
+
+    return "".join(result).strip()
+
+
+def _download_image_bytes(url: str) -> bytes:
+    """
+    포스터 이미지를 다운로드해서 raw bytes로 반환.
+    (LLM 시각 입력 또는 Seedream용)
+    """
+    try:
+        resp = requests.get(url, timeout=20)
+        resp.raise_for_status()
+        return resp.content
+    except Exception as e:
+        raise RuntimeError(f"failed to download poster image: {e}")
+
+
 # -------------------------------------------------------------
-# 1) 한글 축제 정보 → 영어 번역 (필드별로 한글이 있을 때만 번역)
+# 1) 한글 축제 정보 → 영어 번역 (씬 묘사용)
+#     - 실제 텍스트 라인에 쓰지는 않고,
+#       포스터 씬 묘사를 자연스럽게 만들기 위한 용도로만 사용
 # -------------------------------------------------------------
 def _translate_festival_ko_to_en(
     festival_name_ko: str,
@@ -67,11 +135,11 @@ def _translate_festival_ko_to_en(
 ) -> Dict[str, str]:
     """
     한글로 들어온 축제명/기간/장소를
-    현수막용으로 자연스러운 영어 표현으로 번역한다.
+    현수막용 배경/씬 묘사를 위한 영어 표현으로 번역한다.
 
     규칙:
     - 각 필드(제목/기간/장소)별로 한글이 하나라도 포함되어 있으면 번역 대상.
-    - 해당 필드에 한글이 전혀 없으면 (숫자/영어/기호만 있으면) 원문을 그대로 유지한다.
+    - 해당 필드에 한글이 전혀 없으면 (숫자/영어/기호만 있으면) 원문을 그대로 유지.
     """
 
     # 원본 문자열
@@ -92,7 +160,6 @@ def _translate_festival_ko_to_en(
             "location_en": location_src,
         }
 
-    # 여기서부터는 최소 한 필드에 한글이 있는 경우 → LLM 번역 사용
     client = get_openai_client()
     model_name = os.getenv("BANNER_LLM_MODEL", "gpt-4o-mini")
 
@@ -121,8 +188,7 @@ def _translate_festival_ko_to_en(
                     "role": "user",
                     "content": (
                         "Translate the following Korean festival information into English. "
-                        "Return ONLY a JSON object with the keys "
-                        "\"name_en\", \"period_en\", \"location_en\".\n\n"
+                        'Return ONLY a JSON object with the keys "name_en", "period_en", "location_en".\n\n'
                         + json.dumps(user_payload, ensure_ascii=False)
                     ),
                 },
@@ -138,8 +204,6 @@ def _translate_festival_ko_to_en(
         location_candidate = str(data.get("location_en", location_src)).strip()
 
         # 필드별 규칙 적용
-        # 1) 한글이 있는 필드 → 번역 결과가 비어있지 않으면 번역 사용, 아니면 원문
-        # 2) 한글이 없는 필드 → 무조건 원문 유지
         if has_ko_name and name_candidate:
             name_en = name_candidate
         else:
@@ -172,89 +236,164 @@ def _translate_festival_ko_to_en(
 
 
 # -------------------------------------------------------------
-# 2) 영어 정보 → 최종 프롬프트 문자열 (축제 씬 스타일)
+# 2) 포스터 이미지 + 번역된 정보 → 씬 묘사 JSON
 # -------------------------------------------------------------
+def _build_scene_phrase_from_poster(
+    poster_image_url: str,
+    festival_name_en: str,
+    festival_period_en: str,
+    festival_location_en: str,
+) -> Dict[str, str]:
+    """
+    포스터 이미지와 영어 축제 정보를 보고,
+    - base_scene_en       : "Ultra-wide 4:1 illustration of ..." 뒷부분에 들어갈 핵심 장면 설명
+    - details_phrase_en   : 장면 안의 주요 오브젝트/군중/동작 등을 한 문장으로 요약
+    을 LLM에게서 JSON으로 받아온다.
+    """
+    client = get_openai_client()
+    model_name = os.getenv("BANNER_LLM_MODEL", "gpt-4o-mini")
+
+    # 포스터 이미지를 base64 data URL로 변환 (OpenAI 시각 입력용)
+    img_bytes = _download_image_bytes(poster_image_url)
+    b64 = base64.b64encode(img_bytes).decode("ascii")
+    data_url = f"data:image/png;base64,{b64}"
+
+    system_prompt = (
+        "You are helping to design an ultra-wide roadside festival banner.\n"
+        "You will see a reference festival poster image and simple English metadata about the event.\n"
+        "Analyze the image and text and respond with a single JSON object:\n"
+        "{\n"
+        '  "base_scene_en": "...",\n'
+        '  "details_phrase_en": "..."\n'
+        "}\n\n"
+        "- base_scene_en: a short English phrase that can complete the sentence "
+        '"Ultra-wide 4:1 illustration of ...". Do NOT mention aspect ratio, layout, or text placement. '
+        'Example: "a vibrant summer mud festival by the beach at sunset".\n'
+        "- details_phrase_en: one concise sentence describing the key subjects, objects, and motion in the scene, "
+        "such as crowds, stages, cars, mud splashes, rides, snow, lights, etc. "
+        "This should describe what is happening visually, not how the text is placed.\n"
+        "- Do NOT start base_scene_en with phrases like \"Ultra-wide\" or \"4:1\"; just describe the scene itself.\n"
+        "- Do NOT invent a new event name, date, or location: rely only on the given metadata."
+    )
+
+    user_text = (
+        "Event metadata (English):\n"
+        f"- title: {festival_name_en}\n"
+        f"- period: {festival_period_en}\n"
+        f"- location: {festival_location_en}\n\n"
+        "Use this information together with the attached poster image to describe the overall scene and style."
+    )
+
+    try:
+        resp = client.chat.completions.create(
+            model=model_name,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_text},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                },
+            ],
+            temperature=0.4,
+        )
+        raw = resp.choices[0].message.content or "{}"
+        data = json.loads(raw)
+        base_scene_en = str(data.get("base_scene_en", "")).strip()
+        details_phrase_en = str(data.get("details_phrase_en", "")).strip()
+    except Exception as e:
+        print(f"[make_road_banner._build_scene_phrase_from_poster] failed: {e}")
+        base_scene_en = ""
+        details_phrase_en = ""
+
+    def _norm(s: str) -> str:
+        # 줄바꿈/연속 공백 제거 → Seedream이 \n 못 알아듣는 문제 피하기
+        return " ".join(str(s or "").split())
+
+    base_scene_en = _norm(base_scene_en)
+    details_phrase_en = _norm(details_phrase_en)
+
+    # fallback: 그래도 비어있으면 대체 문구
+    if not base_scene_en:
+        base_scene_en = _norm(
+            f"a vibrant outdoor festival inspired by {festival_name_en}".strip()
+        )
+
+    # 혹시 LLM이 "Ultra-wide 4:1 illustration of ..." 까지 같이 써버린 경우 제거
+    lower = base_scene_en.lower()
+    for prefix in [
+        "ultra-wide 4:1 illustration of",
+        "ultra wide 4:1 illustration of",
+        "ultra-wide illustration of",
+        "wide 4:1 illustration of",
+    ]:
+        if lower.startswith(prefix):
+            base_scene_en = base_scene_en[len(prefix):].lstrip(" ,.-")
+            break
+
+    if not details_phrase_en:
+        details_phrase_en = _norm(
+            "with a lively crowd, dynamic motion, and rich lighting, digital art style"
+        )
+
+    return {
+        "base_scene_en": base_scene_en,
+        "details_phrase_en": details_phrase_en,
+    }
+
+
+# -------------------------------------------------------------
+# 3) 영어 씬 묘사 + 플레이스홀더 텍스트 → 최종 프롬프트 문자열
+# -------------------------------------------------------------
+
+
 def _build_road_banner_prompt_en(
-    name_en: str,
-    period_en: str,
-    location_en: str,
+    name_text: str,
+    period_text: str,
+    location_text: str,
+    base_scene_en: str,
+    details_phrase_en: str,
 ) -> str:
-    """
-    번역된 영어 축제 정보(제목/기간/장소)를 사용해
-    4:1 도로용 현수막 생성을 위한 영어 프롬프트를 만든다.
+    def _norm(s: str) -> str:
+        return " ".join(str(s or "").split())
 
-    - 참고 포스터의 색감/조명/분위기를 따오되
-    - 평면 그라데이션 배경이 아니라, 인물/무대/머드/군중 등이 있는
-      '축제 씬' 스타일의 가로 배너 구성을 유도한다.
-    """
+    base_scene_en = _norm(base_scene_en)
+    details_phrase_en = _norm(details_phrase_en)
+    name_text = _norm(name_text)
+    period_text = _norm(period_text)
+    location_text = _norm(location_text)
 
-    prompt_lines: list[str] = []
-
-    # 4:1 비율 + 용도 설명
-    prompt_lines.append(
-        "Ultra-wide roadside festival banner (4:1 ratio, 4096x1024) for large outdoor printing."
-    )
-
-    # 참고 포스터 이미지 사용 지시
-    prompt_lines.append(
-        "Use the attached reference poster image ONLY as inspiration for the overall color palette, lighting, mood, and visual style."
-    )
-    prompt_lines.append(
-        "Design a completely new wide horizontal composition that feels consistent with the reference, "
-        "but do NOT copy the exact layout, characters, logos, or typography."
-    )
-
-    prompt_lines.append("")  # 빈 줄
-
-    # 🔥 배경: 축제 씬 스타일로 유도
-    prompt_lines.append(
-        "Create a wide, cinematic festival scene inspired by the reference poster, with lively characters, depth, and a strong sense of motion and energy."
-    )
-    prompt_lines.append(
-        "Visually emphasize the main theme and atmosphere of the event shown in the reference (for example, mud, snow, lights, rides, stages, or crowds, depending on the poster)."
-    )
-    prompt_lines.append(
-        "Use a polished 3D illustration or stylized animation look rather than a flat gradient background."
-    )
-    prompt_lines.append(
-        "Place most of the detailed scene, characters, and objects in the upper and lower areas of the banner, "
-        "and keep a softer, lower-detail band across the center so the text remains extremely easy to read from far away."
+    prompt = (
+        f"Ultra-wide 4:1 illustration of {base_scene_en}, "
+        "using the attached poster image only as reference for bright colors, lighting and atmosphere "
+        f"but creating a completely new scene with {details_phrase_en}. "
+        "In the exact center of the banner, stack exactly three lines of text, all perfectly center-aligned horizontally. "
+        f"On the middle line, write \"{name_text}\" in extremely large, ultra-bold sans-serif letters, "
+        "the largest text in the entire image and clearly readable from a very long distance. "
+        f"On the top line, directly above the title, write \"{period_text}\" in smaller bold sans-serif letters. "
+        f"On the bottom line, directly below the title, write \"{location_text}\" in a size slightly smaller than the top line. "
+        "All three lines must be drawn in the foremost visual layer, clearly on top of every background element, "
+        "character, object, and effect in the scene, and nothing may overlap, cover, or cut through any part of the letters. "
+        "Draw exactly these three lines of text once each. Do not draw any second copy, shadow copy, reflection, "
+        "mirrored copy, outline-only copy, blurred copy, or partial copy of any of this text anywhere else in the image, "
+        "including on the ground, sky, water, buildings, decorations, or interface elements. "
+        "Do not add any other text at all: no extra words, labels, dates, numbers, logos, watermarks, or UI elements "
+        "beyond these three lines. "
+        "Do not place the text on any banner, signboard, panel, box, frame, ribbon, or physical board; "
+        "draw only clean floating letters directly over the background. "
+        "The quotation marks in this prompt are for instruction only; do not draw quotation marks in the final image."
     )
 
-    prompt_lines.append("")  # 빈 줄
+    return prompt.strip()
 
-    # 텍스트 3줄 (영어)
-    prompt_lines.append(
-        "Draw exactly three lines of large English text on the banner, centered horizontally:"
-    )
-    prompt_lines.append("")
-    prompt_lines.append(f'1. "{name_en}"')
-    prompt_lines.append(f'2. "{period_en}"')
-    prompt_lines.append(f'3. "{location_en}"')
-    prompt_lines.append("")
 
-    # 텍스트 스타일 및 제약
-    prompt_lines.append(
-        "Make the first line (festival name) the biggest and most eye-catching."
-    )
-    prompt_lines.append(
-        "Use bold, high-contrast Latin letters that are clearly readable from a long distance."
-    )
-    prompt_lines.append(
-        "Ensure strong contrast between the text and the background, and avoid placing busy details directly behind the text."
-    )
-    prompt_lines.append(
-        "Draw ONLY these three lines of text. Do NOT add any extra text, Korean characters, numbers, logos, or watermarks."
-    )
-    prompt_lines.append(
-        "The quotation marks in this prompt are for instructions only. Do NOT draw the quotation marks in the image."
-    )
-
-    return "\n".join(prompt_lines).strip()
 
 
 # -------------------------------------------------------------
-# 3) write_road_banner: Seedream 입력 JSON 생성
+# 4) write_road_banner: Seedream 입력 JSON 생성 (+ 플레이스홀더 포함)
 # -------------------------------------------------------------
 def write_road_banner(
     poster_image_url: str,
@@ -287,36 +426,75 @@ def write_road_banner(
           "type": "image_url",
           "url": "<poster_image_url>"
         }
-      ]
+      ],
+      "festival_name_placeholder": "2025 ABCDEF",
+      "festival_period_placeholder": "2025.08.15 ~ 2025.08.20",
+      "festival_location_placeholder": "BCDE FGHIJKLM NO",
+      "festival_base_name_placeholder": "제 11회 해운대 빛 축제",
+      "festival_base_period_placeholder": "2024.12.14 ~ 2025.02.02",
+      "festival_base_location_placeholder": "부산 해운대 일대"
     }
     """
 
-    # 1) 한글 축제 정보 → 영어 번역 (필드별 한글 여부에 따라 번역/유지)
+    # 1) 한글 축제 정보 → 영어 번역 (씬 묘사용)
     translated = _translate_festival_ko_to_en(
         festival_name_ko=festival_name_ko,
         festival_period_ko=festival_period_ko,
         festival_location_ko=festival_location_ko,
     )
 
-    # 2) 4:1 가로 현수막용 프롬프트 생성
-    prompt = _build_road_banner_prompt_en(
-        name_en=translated["name_en"],
-        period_en=translated["period_en"],
-        location_en=translated["location_en"],
+    name_en = translated["name_en"]
+    period_en = translated["period_en"]
+    location_en = translated["location_en"]
+
+    # 2) 자리수 맞춘 플레이스홀더 + 원본 한글 텍스트 보존
+    placeholders: Dict[str, str] = {
+        # 축제명: A부터 시작하는 시퀀스
+        "festival_name_placeholder": _build_placeholder_from_hangul(
+            festival_name_ko, "A"
+        ),
+        # 축제기간: 숫자/기호는 그대로, 한글만 C부터 시작하는 시퀀스
+        "festival_period_placeholder": _build_placeholder_from_hangul(
+            festival_period_ko, "C"
+        ),
+        # 축제장소: B부터 시작하는 시퀀스
+        "festival_location_placeholder": _build_placeholder_from_hangul(
+            festival_location_ko, "B"
+        ),
+        # 🔹 원본 한글 텍스트도 그대로 같이 넣어줌 (나중에 폰트/색상 추천용)
+        "festival_base_name_placeholder": str(festival_name_ko or ""),
+        "festival_base_period_placeholder": str(festival_period_ko or ""),
+        "festival_base_location_placeholder": str(festival_location_ko or ""),
+    }
+
+    # 3) 포스터 이미지 분석 → 씬 묘사 얻기
+    scene_info = _build_scene_phrase_from_poster(
+        poster_image_url=poster_image_url,
+        festival_name_en=name_en,
+        festival_period_en=period_en,
+        festival_location_en=location_en,
     )
 
-    # 3) Seedream / Replicate 입력 JSON 구성
+    # 4) 최종 프롬프트 조립
+    prompt = _build_road_banner_prompt_en(
+        name_text=placeholders["festival_name_placeholder"],
+        # 기간 플레이스홀더가 비어 있으면 번역된/원본 period_en 사용
+        period_text=placeholders["festival_period_placeholder"] or period_en,
+        location_text=placeholders["festival_location_placeholder"],
+        base_scene_en=scene_info["base_scene_en"],
+        details_phrase_en=scene_info["details_phrase_en"],
+    )
+
+    # 5) Seedream / Replicate 입력 JSON 구성
     seedream_input: Dict[str, Any] = {
         "size": "custom",
         "width": 4096,
         "height": 1024,
         "prompt": prompt,
         "max_images": 1,
-        # Seedream 설정에 따라 다를 수 있음. 사용 중인 스펙에 맞게 조정 가능.
         "aspect_ratio": "match_input_image",
         "enhance_prompt": True,
         "sequential_image_generation": "disabled",
-        # 참고 포스터 이미지를 그대로 넘김 (모델이 색감/스타일 참고용으로 사용)
         "image_input": [
             {
                 "type": "image_url",
@@ -325,11 +503,14 @@ def write_road_banner(
         ],
     }
 
+    # 🔹 플레이스홀더 + 원본 한글도 같이 포함
+    seedream_input.update(placeholders)
+
     return seedream_input
 
 
 # -------------------------------------------------------------
-# 4) 이미지 생성용 유틸 (Seedream/Replicate 호출)
+# 5) 이미지 생성용 유틸 (Seedream/Replicate 호출)
 # -------------------------------------------------------------
 def _extract_poster_url_from_input(seedream_input: Dict[str, Any]) -> str:
     """
@@ -402,8 +583,10 @@ def _save_image_from_file_output(
 
 
 # -------------------------------------------------------------
-# 5) create_road_banner: Seedream JSON → Replicate 호출 → 이미지 저장
+# 6) create_road_banner: Seedream JSON → Replicate 호출 → 이미지 저장
+#     + 플레이스홀더까지 같이 반환
 # -------------------------------------------------------------
+
 def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
     """
     /road-banner/write 에서 만든 Seedream 입력 JSON을 그대로 받아
@@ -413,35 +596,45 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
        실제 4:1 가로 현수막 이미지를 생성하고,
     4) 생성된 이미지를 로컬에 저장한다.
 
-    입력 예 (body 그대로):
-    {
-      "size": "custom",
-      "width": 4096,
-      "height": 1024,
-      "prompt": "...",
-      "max_images": 1,
-      "aspect_ratio": "match_input_image",
-      "enhance_prompt": true,
-      "sequential_image_generation": "disabled",
-      "image_input": [
-        { "type": "image_url", "url": "http://localhost:5000/static/banner/sample_mud.PNG" }
-      ]
-    }
-
     반환:
     {
-      "image_path": "app/data/road_banner/road_banner_YYYYMMDD_HHMMSS.png",
-      "image_filename": "road_banner_YYYYMMDD_HHMMSS.png",
-      "prompt": "<사용된 프롬프트 문자열>"
+      "image_path": "...",
+      "image_filename": "...",
+      "prompt": "...",
+      "festival_name_placeholder": "...",
+      "festival_period_placeholder": "...",
+      "festival_location_placeholder": "...",
+      "festival_base_name_placeholder": "...",
+      "festival_base_period_placeholder": "...",
+      "festival_base_location_placeholder": "..."
     }
     """
+
+    # 🔹 입력 JSON에서 플레이스홀더 + 원본 한글 그대로 꺼냄
+    festival_name_placeholder = str(seedream_input.get("festival_name_placeholder", ""))
+    festival_period_placeholder = str(
+        seedream_input.get("festival_period_placeholder", "")
+    )
+    festival_location_placeholder = str(
+        seedream_input.get("festival_location_placeholder", "")
+    )
+
+    festival_base_name_placeholder = str(
+        seedream_input.get("festival_base_name_placeholder", "")
+    )
+    festival_base_period_placeholder = str(
+        seedream_input.get("festival_base_period_placeholder", "")
+    )
+    festival_base_location_placeholder = str(
+        seedream_input.get("festival_base_location_placeholder", "")
+    )
 
     # 1) 포스터 URL 추출
     poster_url = _extract_poster_url_from_input(seedream_input)
     if not poster_url:
         raise ValueError("seedream_input.image_input 에 참조 포스터 이미지 URL이 없습니다.")
 
-    # 2) 포스터 이미지 다운로드 → 바이너리 → 파일 객체
+    # 2) 포스터 이미지 다운로드 → 파일 객체
     resp = requests.get(poster_url, timeout=30)
     resp.raise_for_status()
     img_bytes = resp.content
@@ -472,7 +665,37 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     model_name = os.getenv("ROAD_BANNER_MODEL", "bytedance/seedream-4")
-    output = replicate.run(model_name, input=replicate_input)
+
+    # 🔁 Seedream / Replicate 일시 오류(PA 등)에 대비한 재시도 로직
+    output = None
+    last_err: Exception | None = None
+
+    for attempt in range(3):  # 최대 3번까지 시도
+        try:
+            output = replicate.run(model_name, input=replicate_input)
+            break  # 성공하면 루프 탈출
+        except ModelError as e:
+            msg = str(e)
+            # Prediction interrupted; please retry (code: PA) 같은 일시 오류만 재시도
+            if "Prediction interrupted" in msg or "code: PA" in msg:
+                last_err = e
+                time.sleep(1.0)
+                continue
+            # 그 외 ModelError는 그대로 넘김
+            raise RuntimeError(
+                f"Seedream model error during road banner generation: {e}"
+            )
+        except Exception as e:
+            # 네트워크 등 다른 예외는 바로 실패
+            raise RuntimeError(
+                f"Unexpected error during road banner generation: {e}"
+            )
+
+    # 3번 모두 실패한 경우
+    if output is None:
+        raise RuntimeError(
+            f"Seedream model error during road banner generation after retries: {last_err}"
+        )
 
     if not (isinstance(output, (list, tuple)) and output):
         raise RuntimeError(f"Unexpected output from model {model_name}: {output!r}")
@@ -484,8 +707,17 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
         file_output, save_base, prefix="road_banner_"
     )
 
+    # 🔹 여기서 플레이스홀더 + 원본 한글까지 같이 반환
     return {
         "image_path": image_path,
         "image_filename": image_filename,
         "prompt": prompt,
+        "festival_name_placeholder": festival_name_placeholder,
+        "festival_period_placeholder": festival_period_placeholder,
+        "festival_location_placeholder": festival_location_placeholder,
+        "festival_base_name_placeholder": festival_base_name_placeholder,
+        "festival_base_period_placeholder": festival_base_period_placeholder,
+        "festival_base_location_placeholder": festival_base_location_placeholder,
     }
+
+
