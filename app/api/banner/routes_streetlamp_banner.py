@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-/streetlamp-banner/write  → (입력: 한글 축제 정보) → (출력: Seedream 입력 JSON 그대로)
-/streetlamp-banner/create → (입력: Seedream 입력 JSON 그대로) → Seedream 호출 후 생성된 현수막 이미지 저장
-/streetlamp-banner/run    → (입력: 한글 축제 정보) → 내부에서 write + create까지 한 번에 실행
+/streetlamp-banner/write    → (입력: 한글 축제 정보) → (출력: Seedream 입력 JSON 그대로)
+/streetlamp-banner/create   → (입력: Seedream 입력 JSON 그대로) → Seedream 호출 후 생성된 현수막 이미지 저장
+/streetlamp-banner/run      → (입력: 한글 축제 정보) → 내부에서 write + create까지 한 번에 실행
+/streetlamp-banner/recommend → (입력: create/run 결과 JSON) → 폰트/색상 추천만 추가해서 반환
+/streetlamp-banner/operate  → (입력: 한글 축제 정보) → run + recommend 를 한 번에 실행
 """
 
 from __future__ import annotations
@@ -11,11 +13,14 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel
-from replicate.exceptions import ModelError
+from replicate.exceptions import ModelError  # 필요 없으면 나중에 정리해도 됨
 
 from app.service.banner_khs.make_streetlamp_banner import (
     write_streetlamp_banner,
     create_streetlamp_banner,
+)
+from app.service.font_color.banner_font_color_recommend import (
+    recommend_fonts_and_colors_for_banner,
 )
 
 router = APIRouter(prefix="/streetlamp-banner", tags=["Streetlamp Banner"])
@@ -59,7 +64,6 @@ def create_streetlamp_banner_image(
     try:
         result = create_streetlamp_banner(seedream_input)
     except HTTPException:
-        # 이미 위쪽 계층에서 HTTPException 을 던진 경우 그대로 전달
         raise
     except Exception as e:
         raise HTTPException(
@@ -73,12 +77,18 @@ def create_streetlamp_banner_image(
         "image_path": result["image_path"],
         "image_filename": result["image_filename"],
         "prompt": result["prompt"],
+        "width": result.get("width"),
+        "height": result.get("height"),
         "festival_name_placeholder": result.get("festival_name_placeholder", ""),
         "festival_period_placeholder": result.get("festival_period_placeholder", ""),
         "festival_location_placeholder": result.get("festival_location_placeholder", ""),
         "festival_base_name_placeholder": result.get("festival_base_name_placeholder", ""),
-        "festival_base_period_placeholder": result.get("festival_base_period_placeholder", ""),
-        "festival_base_location_placeholder": result.get("festival_base_location_placeholder", ""),
+        "festival_base_period_placeholder": result.get(
+            "festival_base_period_placeholder", ""
+        ),
+        "festival_base_location_placeholder": result.get(
+            "festival_base_location_placeholder", ""
+        ),
     }
 
 
@@ -86,7 +96,10 @@ def create_streetlamp_banner_image(
 # 3) 한 번에 write + create까지 실행하는 RUN API
 # ---------------------------------------------------------
 @router.post("/run")
-def run_streetlamp_banner_pipeline(req: StreetlampBannerRequest) -> Dict[str, Any]:
+@router.post("/run")
+def run_streetlamp_banner_pipeline(
+    req: StreetlampBannerRequest,
+) -> Dict[str, Any]:
     """
     1) /streetlamp-banner/write 로 Seedream 입력 JSON을 만들고
     2) /streetlamp-banner/create 로 이미지를 생성하는 과정을 한 번에 수행.
@@ -116,18 +129,128 @@ def run_streetlamp_banner_pipeline(req: StreetlampBannerRequest) -> Dict[str, An
             detail=f"streetlamp banner generation failed: {e}",
         )
 
+    # 🔹 seedream_input 은 응답에 포함하지 않음 (내부에서만 사용)
     return {
         "status": "success",
         "type": "streetlamp-banner",
         "image_path": result["image_path"],
         "image_filename": result["image_filename"],
         "prompt": result["prompt"],
-        # 🔹 run 은 seedream_input 도 같이 돌려줌 (디버깅/재생성용)
-        "seedream_input": seedream_input,
+        "width": result.get("width"),
+        "height": result.get("height"),
         "festival_name_placeholder": result.get("festival_name_placeholder", ""),
         "festival_period_placeholder": result.get("festival_period_placeholder", ""),
         "festival_location_placeholder": result.get("festival_location_placeholder", ""),
         "festival_base_name_placeholder": result.get("festival_base_name_placeholder", ""),
-        "festival_base_period_placeholder": result.get("festival_base_period_placeholder", ""),
-        "festival_base_location_placeholder": result.get("festival_base_location_placeholder", ""),
+        "festival_base_period_placeholder": result.get(
+            "festival_base_period_placeholder", ""
+        ),
+        "festival_base_location_placeholder": result.get(
+            "festival_base_location_placeholder", ""
+        ),
     }
+
+
+
+# ---------------------------------------------------------
+# 4) 폰트/색상 추천만 하는 RECOMMEND API
+# ---------------------------------------------------------
+@router.post("/recommend")
+def recommend_streetlamp_banner_fonts_and_colors(
+    payload: Dict[str, Any] = Body(...),
+) -> Dict[str, Any]:
+    """
+    /streetlamp-banner/create 나 /streetlamp-banner/run 의 결과 JSON을 그대로 넣으면,
+    font-family / hex 색상 추천을 추가해서 반환한다.
+    """
+    try:
+        banner_type = str(payload.get("type") or "streetlamp-banner")
+        image_path = str(payload["image_path"])
+        image_filename = str(payload.get("image_filename", ""))
+
+        festival_name_placeholder = str(
+            payload.get("festival_name_placeholder", "")
+        )
+        festival_period_placeholder = str(
+            payload.get("festival_period_placeholder", "")
+        )
+        festival_location_placeholder = str(
+            payload.get("festival_location_placeholder", "")
+        )
+
+        festival_base_name_placeholder = str(
+            payload.get("festival_base_name_placeholder", "")
+        )
+        festival_base_period_placeholder = str(
+            payload.get("festival_base_period_placeholder", "")
+        )
+        festival_base_location_placeholder = str(
+            payload.get("festival_base_location_placeholder", "")
+        )
+
+        # 🔹 width / height 도 같이 받아둠 (없으면 None)
+        width = payload.get("width")
+        height = payload.get("height")
+
+    except KeyError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"missing required field in recommend payload: {e}",
+        )
+
+    try:
+        rec = recommend_fonts_and_colors_for_banner(
+            banner_type=banner_type,
+            image_path=image_path,
+            festival_name_placeholder=festival_name_placeholder,
+            festival_period_placeholder=festival_period_placeholder,
+            festival_location_placeholder=festival_location_placeholder,
+            festival_base_name_placeholder=festival_base_name_placeholder,
+            festival_base_period_placeholder=festival_base_period_placeholder,
+            festival_base_location_placeholder=festival_base_location_placeholder,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"font/color recommendation failed: {e}",
+        )
+
+    response: Dict[str, Any] = dict(payload)
+    response.setdefault("type", banner_type)
+    response.setdefault("image_path", image_path)
+    response.setdefault("image_filename", image_filename)
+
+    # 🔹 width / height 도 응답에 보장
+    if width is not None:
+        response.setdefault("width", width)
+    if height is not None:
+        response.setdefault("height", height)
+
+    response.update(rec)
+    return response
+
+
+
+# ---------------------------------------------------------
+# 5) 한 번에 run + recommend 까지 실행하는 OPERATE API
+# ---------------------------------------------------------
+
+@router.post("/operate")
+def operate_streetlamp_banner(
+    req: StreetlampBannerRequest,
+) -> Dict[str, Any]:
+    """
+    /streetlamp-banner/run + /streetlamp-banner/recommend 를 한 번에 실행.
+    최종 반환 JSON 구조는 /streetlamp-banner/recommend 결과와 완전히 동일하게 맞춘다.
+    """
+    # 1) run 실행
+    base_result = run_streetlamp_banner_pipeline(req)
+
+    # 혹시 과거 버전 때문에 seedream_input이 들어와도 여기서 한번 더 제거
+    if isinstance(base_result, dict):
+        base_result.pop("seedream_input", None)
+
+    # 2) /streetlamp-banner/recommend 와 동일한 로직/형식을 재사용
+    return recommend_streetlamp_banner_fonts_and_colors(payload=base_result)
+
+

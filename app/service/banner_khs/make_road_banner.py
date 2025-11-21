@@ -44,6 +44,9 @@ from openai import OpenAI
 import time
 from replicate.exceptions import ModelError
 
+import mimetypes
+
+
 
 # -------------------------------------------------------------
 # 전역 OpenAI 클라이언트
@@ -601,6 +604,8 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
       "image_path": "...",
       "image_filename": "...",
       "prompt": "...",
+      "width": 4096,
+      "height": 1024,
       "festival_name_placeholder": "...",
       "festival_period_placeholder": "...",
       "festival_location_placeholder": "...",
@@ -707,8 +712,11 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
         file_output, save_base, prefix="road_banner_"
     )
 
-    # 🔹 여기서 플레이스홀더 + 원본 한글까지 같이 반환
+    # 🔹 여기서 플레이스홀더 + 원본 한글까지 같이 반환 + width/height 추가
     return {
+        "size": size,
+        "width": width,
+        "height": height,
         "image_path": image_path,
         "image_filename": image_filename,
         "prompt": prompt,
@@ -719,5 +727,3 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
         "festival_base_period_placeholder": festival_base_period_placeholder,
         "festival_base_location_placeholder": festival_base_location_placeholder,
     }
-
-

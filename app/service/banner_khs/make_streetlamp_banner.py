@@ -74,8 +74,14 @@ def _build_streetlamp_banner_prompt_en(
 
         f"On the middle line, write \"{name_text}\" in extremely large, ultra-bold sans-serif letters, "
         "the largest text in the entire image and clearly readable from a very long distance. "
-        f"On the top line, above the title, write \"{period_text}\" in smaller bold sans-serif letters. "
-        f"On the bottom line, below the title, write \"{location_text}\" in a size slightly smaller than the top line. "
+        "Make this title block so large that it visually dominates the upper central area of the banner, "
+        "and it must never look like a small caption or subtitle. "
+        f"On the top line, above the title, write \"{period_text}\" in smaller bold sans-serif letters, "
+        "but still keep these letters big, bright, and clearly readable from far away, not tiny caption text. "
+        f"On the bottom line, below the title, write \"{location_text}\" in a size slightly smaller than the top line, "
+        "but still as bold headline text, never thin or subtle. "
+
+
         "All three lines must be drawn in the foremost visual layer, clearly on top of every background element, "
         "character, object, and effect in the scene, and nothing may overlap, cover, or cut through any part of the letters. "
         "Draw exactly these three lines of text once each. Do not draw any second copy, shadow copy, reflection, "
@@ -88,9 +94,11 @@ def _build_streetlamp_banner_prompt_en(
         "The quotation marks in this prompt are for instruction only; do not draw quotation marks in the final image."
     )
 
-
-
     return prompt.strip()
+
+
+
+
 
 
 # -------------------------------------------------------------
@@ -298,8 +306,11 @@ def create_streetlamp_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
         file_output, save_base, prefix="streetlamp_banner_"
     )
 
-    # 🔹 여기서 플레이스홀더 + 원본 한글까지 같이 반환
+    # 🔹 여기서 플레이스홀더 + 원본 한글까지 같이 반환 + size/width/height 포함
     return {
+        "size": size,
+        "width": width,
+        "height": height,
         "image_path": image_path,
         "image_filename": image_filename,
         "prompt": prompt,
