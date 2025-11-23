@@ -2,47 +2,82 @@
 """
 app/service/bus/make_general_bus_driveway.py
 
-일반버스 차도면(3.7:1) 외부 광고용 Seedream 입력/프롬프트 생성 + 생성 이미지 저장 모듈.
+일반버스 차도면(3.7:1) 외부 광고용 Seedream 입력/프롬프트 생성
++ 생성 이미지 저장 + 폰트/색상 추천 + editor 저장 모듈.
 
 역할
-- 참고용 포스터 이미지(URL)와 축제 정보(한글)를 입력받아서
+- 참고용 포스터 이미지(URL 또는 로컬 파일 경로)와 축제 정보(한글)를 입력받아서
   1) OpenAI LLM으로 축제명/기간/장소를 영어로 번역하고
   2) 포스터 이미지를 시각적으로 분석해서 "축제 씬 묘사"를 영어로 만든 뒤
   3) 한글 자리수에 맞춘 플레이스홀더 텍스트(라틴 알파벳 시퀀스)를 사용해서
-     3.7:1 일반버스 차도면 외부 광고 프롬프트를 조립한다. (write_general_bus_driveway)
+     3.7:1 일반버스 차도면 프롬프트를 조립한다. (write_general_bus_driveway)
   4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 생성하고 저장한다. (create_general_bus_driveway)
+  5) 완성된 배너 이미지를 기반으로 폰트/색상 추천을 수행한다.
+  6) run_general_bus_driveway_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
+  7) python make_general_bus_driveway.py 로 단독 실행할 수 있다.
 
 전제 환경변수
-- OPENAI_API_KEY                    : OpenAI API 키
-- BANNER_LLM_MODEL                  : (선택) 기본값 "gpt-4o-mini"
-- GENERAL_BUS_DRIVEWAY_MODEL        : (선택) 기본값 "bytedance/seedream-4"
-- GENERAL_BUS_DRIVEWAY_SAVE_DIR     : (선택) 기본값 "app/data/bus/general_bus_driveway"
+- OPENAI_API_KEY                     : OpenAI API 키
+- BANNER_LLM_MODEL                   : (선택) 기본값 "gpt-4o-mini"
+- GENERAL_BUS_DRIVEWAY_MODEL         : (선택) 기본값 "bytedance/seedream-4"
+- GENERAL_BUS_DRIVEWAY_SAVE_DIR      : (선택)
+    * 절대경로면 그대로 사용
+    * 상대경로면 acc-ai 프로젝트 루트 기준
+    * 미설정 시 PROJECT_ROOT/app/data/general_bus_driveway 사용
+
+CLI 실행:
+    python make_general_bus_driveway.py
 """
 
 from __future__ import annotations
 
 import os
+import sys
 import time
+import json
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict
 
-import requests
 import replicate
+from dotenv import load_dotenv
 from replicate.exceptions import ModelError
 
+# -------------------------------------------------------------
+# 프로젝트 루트 및 DATA_ROOT, .env 로딩 + sys.path 설정
+# -------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DATA_ROOT = PROJECT_ROOT / "app" / "data"
+
+# .env 로딩 (예: C:\final_project\ACC\acc-ai\.env)
+env_path = PROJECT_ROOT / ".env"
+load_dotenv(env_path)
+
+# app 패키지 import를 위해 루트를 sys.path에 추가
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# -------------------------------------------------------------
 # 기존 road_banner 유틸 재사용
-from app.service.banner_khs.make_road_banner import (
+# -------------------------------------------------------------
+from app.service.banner_khs.make_road_banner import (  # type: ignore
     _build_placeholder_from_hangul,
     _translate_festival_ko_to_en,
     _build_scene_phrase_from_poster,
     _extract_poster_url_from_input,
     _save_image_from_file_output,
+    _download_image_bytes,
+)
+
+# 폰트/색상 추천 모듈
+from app.service.font_color.bus_font_color_recommend import (  # type: ignore
+    recommend_fonts_and_colors_for_bus,
 )
 
 
 # -------------------------------------------------------------
-# 1) General-bus-driveway 전용 프롬프트 빌더
+# 1) 영어 씬 묘사 + 플레이스홀더 텍스트 → 일반버스 차도면 프롬프트
 # -------------------------------------------------------------
 def _build_general_bus_driveway_prompt_en(
     name_text: str,
@@ -51,14 +86,6 @@ def _build_general_bus_driveway_prompt_en(
     base_scene_en: str,
     details_phrase_en: str,
 ) -> str:
-    """
-    일반버스 차도면(3.7:1, 3788x1024) 외부 광고용 영어 프롬프트를 생성한다.
-    - 포스터 이미지는 색감/조명/분위기 참고용으로만 사용하고,
-      완전히 새로운 장면과 레이아웃을 만든다.
-    - 실제 버스/차량/거리/건물에 붙은 모습은 그리지 않고,
-      인쇄용 평면 아트워크 그 자체만 그린다.
-    """
-
     def _norm(s: str) -> str:
         return " ".join(str(s or "").split())
 
@@ -69,38 +96,57 @@ def _build_general_bus_driveway_prompt_en(
     location_text = _norm(location_text)
 
     prompt = (
-        f"Ultra-wide 3.7:1 illustration of {base_scene_en}, "
-        "using the attached poster image only as reference for bright colors, lighting and atmosphere "
-        f"but creating a completely new scene with {details_phrase_en}. "
-        "Design this image as a clean, flat rectangular artwork for a general bus exterior driveway-side advertisement, "
-        "not shown attached to any real bus, vehicle, wall, or mockup, and with no surrounding street or environment. "
-        "Leave small safe margins along all edges so that no important text is cut off when the print is trimmed or applied. "
+        f"Very wide horizontal festival illustration of {base_scene_en}, "
+        "designed to be printed as a long side banner on a bus, "
+        "but do not draw any actual bus, vehicle, or mounting structure. "
+        "Fill the entire canvas edge to edge with the scene, "
+        "with no black bars, frames, borders, or letterbox areas at the top or bottom. "
+        "Use the attached poster image only as reference for bright colors, lighting and atmosphere, "
+        f"but create a completely new scene with {details_phrase_en}. "
 
-        "Place exactly three lines of text near the visual center of the banner, all perfectly center-aligned horizontally. "
-        "Arrange them so that the middle title line has generous vertical spacing above and below it, "
-        "clearly separated from the other two lines, while the top and bottom lines stay relatively close together as a compact pair, "
-        "so that the period and location do not feel far apart from each other. "
-
+        "Place three lines of text near the horizontal center of the banner, all perfectly center-aligned. "
         f"On the middle line, write \"{name_text}\" in extremely large, ultra-bold sans-serif letters, "
         "the largest text in the entire image and clearly readable from a very long distance. "
-        "Make this title block so large that it visually dominates the central area of the banner, "
-        "and it must never look like a small caption or subtitle. "
         f"On the top line, directly above the title, write \"{period_text}\" in smaller bold sans-serif letters, "
-        "but still keep these letters big, bright, and clearly readable from far away, not tiny caption text. "
-        f"On the bottom line, directly below the title, write \"{location_text}\" in a size slightly smaller than the top line, "
-        "but still as bold headline text, never thin or subtle. "
+        "but still clearly readable from far away. "
+        f"On the bottom line, directly below the title, write \"{location_text}\" in a size slightly smaller than the top line. "
 
         "All three lines must be drawn in the foremost visual layer, clearly on top of every background element, "
         "character, object, and effect in the scene, and nothing may overlap, cover, or cut through any part of the letters. "
         "Draw exactly these three lines of text once each. Do not draw any second copy, shadow copy, reflection, "
         "mirrored copy, outline-only copy, blurred copy, or partial copy of any of this text anywhere else in the image, "
-        "including on the ground, sky, water, buildings, decorations, vehicles, or interface elements. "
-        "Do not add any other text at all: no extra words, labels, dates, numbers, logos, watermarks, or UI elements "
-        "beyond these three lines. "
-        "Do not place the text on any banner, signboard, bus mockup, panel, box, frame, ribbon, or physical board; "
-        "draw only clean floating letters directly over the background artwork. "
+        "including on the ground, sky, water, buildings, decorations, or interface elements. "
+        "Do not add any other text at all: no extra words, labels, dates, numbers, logos, watermarks, UI elements, "
+        "or any small text in the corners, such as aspect ratio labels or the words 'Ultrawide', 'BusBanner', or model names. "
+        "Do not place the text on any banner, signboard, panel, box, frame, ribbon, or physical board; "
+        "draw only clean floating letters directly over the background. "
         "The quotation marks in this prompt are for instruction only; do not draw quotation marks in the final image."
     )
+    #f"{base_scene_en}의 매우 넓은 수평 축제 일러스트레이션,"
+    # "버스의 긴 측면 배너로 인쇄되도록 설계되었습니다,"
+    # "하지만 실제 버스, 차량 또는 장착 구조물을 그리면 안 됩니다."
+    # "장면과 함께 캔버스 가장자리 전체를 채우세요,"
+    # "위나 아래에 검은 막대, 프레임, 테두리 또는 편지함 영역이 없습니다."
+    # "첨부된 포스터 이미지는 밝은 색상, 조명 및 분위기에만 참고하세요,"
+    # f"하지만 {details_phrase_en}으로 완전히 새로운 장면을 만듭니다."
+
+    # 배너의 가로 중앙 근처에 세 줄의 텍스트를 배치하고, 모두 완벽하게 중앙에 정렬합니다
+    # f"가운데 줄에 \\"{name_text}\"를 매우 크고 굵은 산세리프 문자로 씁니다,"
+    # "전체 이미지에서 가장 큰 텍스트이며 매우 먼 거리에서도 명확하게 읽을 수 있습니다."
+    # f"제목 바로 위의 맨 위 줄에 \\"{period_text}\"를 작은 굵은 산세리프 문자로 씁니다,"
+    # "하지만 여전히 멀리서도 분명히 읽을 수 있습니다."
+    # f"아래쪽 줄에는 제목 바로 아래에 \\"{location_text}\\"라고 맨 위 줄보다 약간 작은 크기로 적습니다."
+
+    # "세 줄 모두 모든 배경 요소 위에 명확하게 가장 앞쪽 시각적 층에 그려야 합니다,"
+    # "장면에서 등장인물, 객체, 효과는 글자의 어떤 부분도 겹치거나 덮거나 자를 수 없습니다."
+    # "이 세 줄의 텍스트를 각각 한 번씩 정확하게 그리세요. 두 번째 복사본, 그림자 복사본, 반사를 그리지 마세요,"
+    # "이미지의 다른 부분에 있는 이 텍스트의 mirrored 사본, 개요 전용 사본, 흐릿한 사본 또는 부분 사본"
+    # 지상, 하늘, 물, 건물, 장식 또는 인터페이스 요소를 포함하여
+    # "다른 텍스트는 전혀 추가하지 마세요: 단어, 라벨, 날짜, 숫자, 로고, 워터마크, UI 요소는 추가하지 마세요."
+    # "또는 화면 비율 레이블이나 'Ultrawide', 'BusBanner' 또는 모델 이름과 같은 모서리의 작은 텍스트."
+    # "글을 배너, 간판, 패널, 상자, 프레임, 리본 또는 물리적 보드에 배치하지 마십시오;"
+    # 배경 바로 위에 깨끗한 떠다니는 글자만 그립니다
+    # "이 프롬프트의 따옴표는 지시용이므로 최종 이미지에 따옴표를 그리지 마세요."
 
     return prompt.strip()
 
@@ -115,21 +161,22 @@ def write_general_bus_driveway(
     festival_location_ko: str,
 ) -> Dict[str, Any]:
     """
-    일반버스 차도면(3.7:1, 3788x1024) 외부 광고용 Seedream 입력 JSON을 생성한다.
+    일반버스 차도면(3.7:1, 3788x1024) Seedream 입력 JSON을 생성한다.
 
     입력:
-        poster_image_url    : 참고용 포스터 이미지 URL
+        poster_image_url    : 참고용 포스터 이미지 URL 또는 로컬 파일 경로
         festival_name_ko    : 축제명 (한글)
         festival_period_ko  : 축제 기간 (한글 또는 숫자/영문)
         festival_location_ko: 축제 장소 (한글 또는 영문)
     """
 
-    # 1) 한글 → 영어 번역 (축제명/기간/장소)
+    # 1) 한글 축제 정보 → 영어 번역 (씬 묘사용)
     translated = _translate_festival_ko_to_en(
         festival_name_ko=festival_name_ko,
         festival_period_ko=festival_period_ko,
         festival_location_ko=festival_location_ko,
     )
+
     name_en = translated["name_en"]
     period_en = translated["period_en"]
     location_en = translated["location_en"]
@@ -148,7 +195,7 @@ def write_general_bus_driveway(
         "festival_location_placeholder": _build_placeholder_from_hangul(
             festival_location_ko, "B"
         ),
-        # 🔹 원본 한글 텍스트도 그대로 같이 넣어줌 (나중에 폰트/색상 추천용)
+        # 원본 한글 텍스트도 그대로 같이 넣어줌 (폰트/색상 추천 등에서 활용 가능)
         "festival_base_name_placeholder": str(festival_name_ko or ""),
         "festival_base_period_placeholder": str(festival_period_ko or ""),
         "festival_base_location_placeholder": str(festival_location_ko or ""),
@@ -162,16 +209,17 @@ def write_general_bus_driveway(
         festival_location_en=location_en,
     )
 
-    # 4) 최종 프롬프트 조립 (버스 차도면용)
+    # 4) 최종 프롬프트 조립 (3.7:1 버스 차도면)
     prompt = _build_general_bus_driveway_prompt_en(
         name_text=placeholders["festival_name_placeholder"],
-        period_text=placeholders["festival_period_placeholder"],
+        period_text=placeholders["festival_period_placeholder"] or period_en,
         location_text=placeholders["festival_location_placeholder"],
         base_scene_en=scene_info["base_scene_en"],
         details_phrase_en=scene_info["details_phrase_en"],
     )
 
-    # 5) Seedream 입력 JSON 구성
+    # 5) Seedream / Replicate 입력 JSON 구성
+    #   - 3.7:1 비율: width=3788, height=1024
     seedream_input: Dict[str, Any] = {
         "size": "custom",
         "width": 3788,
@@ -189,27 +237,60 @@ def write_general_bus_driveway(
         ],
     }
 
-    # 🔹 플레이스홀더 + 원본 한글도 같이 포함
+    # 플레이스홀더 + 원본 한글도 같이 포함
     seedream_input.update(placeholders)
 
     return seedream_input
 
 
 # -------------------------------------------------------------
-# 3) create_general_bus_driveway: Seedream JSON → Replicate 호출 → 이미지 저장
+# 3) 일반버스 차도면 저장 디렉터리 결정
+# -------------------------------------------------------------
+def _get_general_bus_driveway_save_dir() -> Path:
+    """
+    GENERAL_BUS_DRIVEWAY_SAVE_DIR 환경변수가 있으면:
+      - 절대경로면 그대로 사용
+      - 상대경로면 PROJECT_ROOT 기준으로 사용
+    없으면:
+      - PROJECT_ROOT/app/data/general_bus_driveway 사용
+    """
+    env_dir = os.getenv("GENERAL_BUS_DRIVEWAY_SAVE_DIR")
+    if env_dir:
+        p = Path(env_dir)
+        if not p.is_absolute():
+            p = PROJECT_ROOT / p
+        return p
+    return DATA_ROOT / "general_bus_driveway"
+
+
+# -------------------------------------------------------------
+# 4) create_general_bus_driveway: Seedream JSON → Replicate 호출 → 이미지 저장
 #     + 플레이스홀더까지 같이 반환
 # -------------------------------------------------------------
 def create_general_bus_driveway(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
     """
-    /general-bus-driveway/write 에서 만든 Seedream 입력 JSON을 그대로 받아
-    1) image_input 에서 포스터 URL을 추출하고,
-    2) 그 이미지를 다운로드해 파일 객체로 만든 뒤,
+    write_general_bus_driveway(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
+    1) image_input 에서 포스터 URL/경로를 추출하고,
+    2) 그 이미지를 다운로드(또는 로컬 파일 읽기)해 파일 객체로 만든 뒤,
     3) Replicate(bytedance/seedream-4)에 prompt + image_input과 함께 전달해
-       일반버스 차도면(3.7:1, 3788x1024) 외부 광고 이미지를 생성하고,
+       실제 3.7:1 일반버스 차도면 이미지를 생성하고,
     4) 생성된 이미지를 로컬에 저장한다.
+
+    반환:
+        {
+          "size", "width", "height",
+          "image_path", "image_filename",
+          "prompt",
+          "festival_name_placeholder",
+          "festival_period_placeholder",
+          "festival_location_placeholder",
+          "festival_base_name_placeholder",
+          "festival_base_period_placeholder",
+          "festival_base_location_placeholder",
+        }
     """
 
-    # 🔹 입력 JSON에서 플레이스홀더 + 원본 한글 그대로 꺼냄
+    # 입력 JSON에서 플레이스홀더 + 원본 한글 그대로 꺼냄
     festival_name_placeholder = str(seedream_input.get("festival_name_placeholder", ""))
     festival_period_placeholder = str(
         seedream_input.get("festival_period_placeholder", "")
@@ -228,15 +309,15 @@ def create_general_bus_driveway(seedream_input: Dict[str, Any]) -> Dict[str, Any
         seedream_input.get("festival_base_location_placeholder", "")
     )
 
-    # 1) 포스터 URL 추출
+    # 1) 포스터 URL/경로 추출
     poster_url = _extract_poster_url_from_input(seedream_input)
     if not poster_url:
-        raise ValueError("seedream_input.image_input 에 참조 포스터 이미지 URL이 없습니다.")
+        raise ValueError(
+            "seedream_input.image_input 에 참조 포스터 이미지 URL/경로가 없습니다."
+        )
 
-    # 2) 포스터 이미지 다운로드 → 파일 객체
-    resp = requests.get(poster_url, timeout=30)
-    resp.raise_for_status()
-    img_bytes = resp.content
+    # 2) 포스터 이미지 로딩 (URL + 로컬 파일 모두 지원)
+    img_bytes = _download_image_bytes(poster_url)
     image_file = BytesIO(img_bytes)
 
     # 3) Replicate에 넘길 input 구성
@@ -265,7 +346,7 @@ def create_general_bus_driveway(seedream_input: Dict[str, Any]) -> Dict[str, Any
 
     model_name = os.getenv("GENERAL_BUS_DRIVEWAY_MODEL", "bytedance/seedream-4")
 
-    # 🔁 Seedream / Replicate 일시 오류(PA 등)에 대비한 재시도 로직
+    # Seedream / Replicate 일시 오류(PA 등)에 대비한 재시도 로직
     output = None
     last_err: Exception | None = None
 
@@ -282,17 +363,18 @@ def create_general_bus_driveway(seedream_input: Dict[str, Any]) -> Dict[str, Any
                 continue
             # 그 외 ModelError는 그대로 넘김
             raise RuntimeError(
-                f"Seedream model error during general bus driveway generation: {e}"
+                f"Seedream model error during general bus driveway banner generation: {e}"
             )
         except Exception as e:
-            # 기타 네트워크 오류 등도 마지막 시도까지 실패하면 에러로 전달
-            last_err = e
-            time.sleep(1.0)
-            continue
+            # 네트워크 등 다른 예외는 바로 실패
+            raise RuntimeError(
+                f"Unexpected error during general bus driveway banner generation: {e}"
+            )
 
+    # 3번 모두 실패한 경우
     if output is None:
         raise RuntimeError(
-            f"Seedream model error during general bus driveway generation after retries: {last_err}"
+            f"Seedream model error during general bus driveway banner generation after retries: {last_err}"
         )
 
     if not (isinstance(output, (list, tuple)) and output):
@@ -300,16 +382,14 @@ def create_general_bus_driveway(seedream_input: Dict[str, Any]) -> Dict[str, Any
 
     file_output = output[0]
 
-    save_base = Path(
-        os.getenv(
-            "GENERAL_BUS_DRIVEWAY_SAVE_DIR", "app/data/bus/general_bus_driveway"
-        )
-    ).resolve()
+    # 기본 저장 위치: PROJECT_ROOT/app/data/general_bus_driveway
+    # 파일명: general_bus_driveway.png (타임스탬프 없이 고정)
+    save_base = _get_general_bus_driveway_save_dir()
     image_path, image_filename = _save_image_from_file_output(
         file_output, save_base, prefix="general_bus_driveway_"
     )
 
-    # 🔹 여기서 플레이스홀더 + 원본 한글까지 같이 반환 + width/height 추가
+    # 플레이스홀더 + 원본 한글까지 같이 반환 + size/width/height 포함
     return {
         "size": size,
         "width": width,
@@ -324,3 +404,221 @@ def create_general_bus_driveway(seedream_input: Dict[str, Any]) -> Dict[str, Any
         "festival_base_period_placeholder": festival_base_period_placeholder,
         "festival_base_location_placeholder": festival_base_location_placeholder,
     }
+
+
+# -------------------------------------------------------------
+# 5) editor 저장용 헬퍼 (run_id 기준)
+# -------------------------------------------------------------
+def run_general_bus_driveway_to_editor(
+    run_id: int,
+    poster_image_url: str,
+    festival_name_ko: str,
+    festival_period_ko: str,
+    festival_location_ko: str,
+) -> Dict[str, Any]:
+    """
+    입력:
+        run_id
+        poster_image_url
+        festival_name_ko
+        festival_period_ko
+        festival_location_ko
+
+    동작:
+      1) write_general_bus_driveway(...) 로 seedream_input 생성
+      2) create_general_bus_driveway(...) 로 실제 배너 이미지 생성
+      3) recommend_fonts_and_colors_for_banner(...) 로 폰트/색상 추천
+      4) 결과 JSON + 이미지 사본을
+         app/data/editor/<run_id>/before_data, before_image 아래에 저장
+
+    반환:
+        editor에 저장된 경로까지 포함한 결과 dict
+    """
+
+    # 1) Seedream 입력 생성
+    seedream_input = write_general_bus_driveway(
+        poster_image_url=poster_image_url,
+        festival_name_ko=festival_name_ko,
+        festival_period_ko=festival_period_ko,
+        festival_location_ko=festival_location_ko,
+    )
+
+    # 2) 실제 배너 이미지 생성
+    create_result = create_general_bus_driveway(seedream_input)
+
+    # 3) 폰트/색상 추천
+    font_color_result = recommend_fonts_and_colors_for_bus(
+    bus_type="general_bus_driveway",
+    image_path=create_result["image_path"],
+    festival_name_placeholder=create_result["festival_name_placeholder"],
+    festival_period_placeholder=create_result["festival_period_placeholder"],
+    festival_location_placeholder=create_result["festival_location_placeholder"],
+    festival_base_name_placeholder=create_result[
+        "festival_base_name_placeholder"
+    ],
+    festival_base_period_placeholder=create_result[
+        "festival_base_period_placeholder"
+    ],
+    festival_base_location_placeholder=create_result[
+        "festival_base_location_placeholder"
+    ],
+)
+
+
+    # 4) editor 디렉터리 준비  ✅ app/data/editor/<run_id>/...
+    editor_root = DATA_ROOT / "editor" / str(run_id)
+    before_data_dir = editor_root / "before_data"
+    before_image_dir = editor_root / "before_image"
+    before_data_dir.mkdir(parents=True, exist_ok=True)
+    before_image_dir.mkdir(parents=True, exist_ok=True)
+
+    # 5) 결과 dict 구성
+    result: Dict[str, Any] = {
+        "run_id": int(run_id),
+        "status": "success",
+        "type": "general_bus_driveway",
+        "poster_image_url": poster_image_url,
+        "festival_name_ko": festival_name_ko,
+        "festival_period_ko": festival_period_ko,
+        "festival_location_ko": festival_location_ko,
+        **create_result,
+        **font_color_result,
+    }
+
+    original_image_path = create_result.get("image_path") or ""
+    result["generated_image_path"] = original_image_path
+
+    # 6) 이미지 파일을 before_image 밑으로 "이동" (원본은 삭제)
+    editor_image_path: str | None = None
+    if original_image_path:
+        src_image = Path(original_image_path)
+        if src_image.exists():
+            dest_image = before_image_dir / src_image.name
+            try:
+                # 1순위: general_bus_driveway → editor/before_image 로 이동
+                src_image.replace(dest_image)
+            except Exception:
+                import shutil
+
+                try:
+                    shutil.copy2(src_image, dest_image)
+                    try:
+                        src_image.unlink(missing_ok=True)
+                    except Exception:
+                        # 삭제 실패해도 치명적이지 않으니 무시
+                        pass
+                except Exception as e:
+                    result["status"] = "warning"
+                    result["image_copy_error"] = str(e)
+                    dest_image = None
+
+            if dest_image and dest_image.exists():
+                editor_image_path = str(dest_image.resolve())
+                result["image_path"] = editor_image_path
+                result["editor_image_path"] = editor_image_path
+        else:
+            result["status"] = "warning"
+            result["image_copy_error"] = (
+                f"generated image not found: {original_image_path}"
+            )
+
+    # 7) before_data 밑에 JSON 저장
+    image_filename = result.get("image_filename") or ""
+    if image_filename:
+        stem = Path(image_filename).stem  # general_bus_driveway → general_bus_driveway.json
+        json_name = f"{stem}.json"
+    else:
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        json_name = f"general_bus_driveway_{ts}.json"
+
+    json_path = before_data_dir / json_name
+    with json_path.open("w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+
+    result["editor_json_path"] = str(json_path.resolve())
+
+    return result
+
+
+# -------------------------------------------------------------
+# 6) 프로젝트 루트 헬퍼 (필요하면 사용)
+# -------------------------------------------------------------
+def _get_project_root() -> Path:
+    """
+    acc-ai 루트 디렉터리를 반환한다.
+    """
+    return PROJECT_ROOT
+
+
+# -------------------------------------------------------------
+# 7) CLI 실행용 main
+# -------------------------------------------------------------
+def main() -> None:
+    """
+    CLI 실행용 진입점.
+
+    ✅ 콘솔에서:
+        python make_general_bus_driveway.py
+
+    를 실행하면, 아래에 적어둔 입력값으로
+    - 일반버스 차도면 Seedream 입력 생성
+    - Seedream 호출로 실제 이미지 생성
+    - 폰트/색상 추천
+    - app/data/editor/<run_id>/before_data, before_image 저장
+    까지 한 번에 수행한다.
+    """
+
+    # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
+    run_id = 3  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+
+    # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
+    poster_image_url = str(DATA_ROOT / "banner" / "andong.png")
+    festival_name_ko = "2024 안동국제 탈춤 페스티벌"
+    festival_period_ko = "2025.09.26 ~ 10.05"
+    festival_location_ko = "중앙선1942안동역, 원도심, 탈춤공원 일원"
+
+    # 2) 혹시라도 비어 있으면 바로 알려주기
+    missing = []
+    if not poster_image_url:
+        missing.append("poster_image_url")
+    if not festival_name_ko:
+        missing.append("festival_name_ko")
+    if not festival_period_ko:
+        missing.append("festival_period_ko")
+    if not festival_location_ko:
+        missing.append("festival_location_ko")
+
+    if missing:
+        print("⚠️ main() 안에 아래 값들을 채워주세요:")
+        for k in missing:
+            print("  -", k)
+        return
+
+    # 3) 실제 실행
+    result = run_general_bus_driveway_to_editor(
+        run_id=run_id,
+        poster_image_url=poster_image_url,
+        festival_name_ko=festival_name_ko,
+        festival_period_ko=festival_period_ko,
+        festival_location_ko=festival_location_ko,
+    )
+
+    print("✅ general bus driveway 배너 생성 + 폰트/색상 추천 + editor 저장 완료")
+    print("  run_id            :", result.get("run_id"))
+    print("  type              :", result.get("type"))
+    print("  editor_json_path  :", result.get("editor_json_path"))
+    print(
+        "  editor_image_path :",
+        result.get("editor_image_path", result.get("image_path")),
+    )
+    print("  generated_image_path :", result.get("generated_image_path"))
+    print("  font_name         :", result.get("festival_font_name_placeholder"))
+    print("  font_period       :", result.get("festival_font_period_placeholder"))
+    print("  font_location     :", result.get("festival_font_location_placeholder"))
+    print("  color_name        :", result.get("festival_color_name_placeholder"))
+    print("  color_period      :", result.get("festival_color_period_placeholder"))
+    print("  color_location    :", result.get("festival_color_location_placeholder"))
+
+
+if __name__ == "__main__":
+    main()

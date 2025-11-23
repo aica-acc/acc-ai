@@ -3,13 +3,16 @@
 app/service/font_color/bus_font_color_recommend.py
 
 역할
-- 버스 외부 광고(road-banner, bus-*) 등에서 생성된 최종 이미지를 보고
+- 버스 외부 광고(general_bus_driveway, medium_bus_driveway, ... 등)에서
+  생성된 최종 이미지를 보고
   제목/기간/장소(3줄)에 어울리는 font-family 와 색상(hex)을 추천한다.
-- 나중에 다른 배너 타입(포스터 등)에서도 재사용할 수 있는 공용 서비스.
+- 나중에 다른 버스 타입(일반버스 인도면, 중형버스 인도면 등)에서도
+  재사용할 수 있는 공용 서비스.
 
 입력
-- bus_type: "road-banner", "streetlamp-banner" 등 (프롬프트 튜닝용)
-- image_path: 로컬에 저장된 최종 배너 이미지 절대경로
+- bus_type: "general_bus_driveway", "medium_bus_driveway",
+            "general_bus_sidewalk" 등 (프롬프트 튜닝용, 단순 메타데이터)
+- image_path: 로컬에 저장된 최종 배너/버스광고 이미지 절대경로
 - festival_*_placeholder: Seedream에 그려진 라틴 알파벳 / 숫자 플레이스홀더 문자열
 - festival_*_base_*: 실제 한글/숫자 텍스트 (원본 축제 정보)
 
@@ -182,18 +185,15 @@ def recommend_fonts_and_colors_for_bus(
     festival_base_location_placeholder: str,
 ) -> Dict[str, Any]:
     """
-    최종 배너 이미지와 텍스트 정보를 바탕으로
+    최종 버스 광고/배너 이미지와 텍스트 정보를 바탕으로
     제목/기간/장소에 어울리는 font-family 와 글자 색상을 추천한다.
 
-    반환 예:
-    {
-      "festival_font_name_placeholder": "Pretendard",
-      "festival_font_period_placeholder": "Suit",
-      "festival_font_location_placeholder": "Suit",
-      "festival_color_name_placeholder": "#FFFFFF",
-      "festival_color_period_placeholder": "#FFE9A3",
-      "festival_color_location_placeholder": "#FFE9A3",
-    }
+    bus_type 예시:
+      - "general_bus_driveway"   (일반버스 차도면 3.7:1)
+      - "medium_bus_driveway"    (중형버스 차도면)
+      - "general_bus_sidewalk"   (일반버스 인도면)
+      - "hyundai_bus_sidewalk"   (현대버스 인도면)
+      - "daewoo_bus_sidewalk"    (대우버스 인도면)
     """
     data_url = _image_path_to_data_url(image_path)
     client = get_openai_client()
@@ -201,18 +201,18 @@ def recommend_fonts_and_colors_for_bus(
 
     # ---------- System Prompt ----------
     system_prompt = (
-        "You are a Korean outdoor festival bus advertisement and banner design assistant.\n"
+        "You are a Korean outdoor festival bus exterior advertisement and banner design assistant.\n"
         "Your job is to recommend font families and text colors for three text lines:\n"
         "- main title line (festival name)\n"
         "- period line (dates)\n"
         "- location line (venue / area)\n\n"
         "Constraints:\n"
         "- Choose font families ONLY from the provided 'font_family_options' list.\n"
-        "- Focus on high legibility from a distance, because these banners are used outdoors.\n"
+        "- Focus on high legibility from a distance, because these banners are used outdoors on moving buses.\n"
         "- The main title should be the most eye-catching and bold.\n"
         "- Period and location can be slightly calmer, but still readable and harmonious with the background.\n"
         "- For colors, use hex form like #FFFFFF.\n"
-        "- Use high contrast against the actual banner image background.\n"
+        "- Use high contrast against the actual bus advertisement image background.\n"
     )
 
     # ---------- User Prompt ----------
@@ -245,13 +245,23 @@ def recommend_fonts_and_colors_for_bus(
 
     user_text = (
         "You will see the final generated festival bus exterior advertisement image and metadata.\n"
-        "Based on the visual style of the image and the role of each text line, "
+        "The 'bus_type' field describes the placement and proportion of the ad. For example:\n"
+        "- \"general_bus_driveway\": a very long about 3.7:1 banner along the side of a full-size bus\n"
+        "- \"medium_bus_driveway\": a long about 3:1 banner along the side of a mid-size bus\n"
+        "- \"all_bus_drivewayT\": a template driveway-side layout that can be adapted to many bus models\n"
+        "- \"general_bus_sidewalkT\": a template for the sidewalk-facing side of a full-size bus\n"
+        "- \"hyundai_bus_sidewalkT\": a sidewalk-side template adjusted for a Hyundai bus body\n"
+        "- \"daewoo_bus_sidewalkT\": a sidewalk-side template adjusted for a Daewoo bus body\n"
+        "- \"medium_bus_sidewalkT\": a sidewalk-side template for a mid-size bus, often closer to a 1:1 area\n"
+        "- \"general_bus_getoff\": a layout around the main door / get-off area of a full-size bus\n"
+        "- \"medium_bus_getoff\": a layout around the door / get-off area of a mid-size bus\n"
+        "Based on the visual style of the image, the bus_type, and the role of each text line, "
         "choose suitable font families and hex text colors for each line.\n\n"
         "Allowed font families (font_family_options):\n"
         f"{font_list_text}\n\n"
         "Important:\n"
-        "- Do NOT blindly reuse the same font families for every banner.\n"
-        "- For this specific banner, select font families that best match its atmosphere, season, and color palette.\n"
+        "- Do NOT blindly reuse the same font families for every bus type.\n"
+        "- For this specific bus advertisement, select font families that best match its atmosphere, season, and color palette.\n"
         "- Consider that the main title line should usually be the most eye-catching.\n"
         "- Period and location lines should be readable but may be slightly calmer.\n\n"
         "Return ONLY a JSON object with the following keys:\n"

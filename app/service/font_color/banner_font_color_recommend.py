@@ -3,12 +3,12 @@
 app/service/font_color/banner_font_color_recommend.py
 
 역할
-- road-banner / streetlamp-banner 등에서 생성된 최종 배너 이미지를 보고
+- road_banner / streetlamp_banner 등에서 생성된 최종 배너 이미지를 보고
   제목/기간/장소(3줄)에 어울리는 font-family 와 색상(hex)을 추천한다.
 - 나중에 다른 배너 타입(포스터 등)에서도 재사용할 수 있는 공용 서비스.
 
 입력
-- banner_type: "road-banner", "streetlamp-banner" 등 (프롬프트 튜닝용)
+- banner_type: "road_banner", "streetlamp_banner" 등 (프롬프트 튜닝용)
 - image_path: 로컬에 저장된 최종 배너 이미지 절대경로
 - festival_*_placeholder: Seedream에 그려진 라틴 알파벳 / 숫자 플레이스홀더 문자열
 - festival_*_base_*: 실제 한글/숫자 텍스트 (원본 축제 정보)
@@ -174,6 +174,10 @@ def recommend_fonts_and_colors_for_banner(
     최종 배너 이미지와 텍스트 정보를 바탕으로
     제목/기간/장소에 어울리는 font-family 와 글자 색상을 추천한다.
 
+    banner_type 예시:
+      - "road_banner"
+      - "streetlamp_banner"
+
     반환 예:
     {
       "festival_font_name_placeholder": "Pretendard",
@@ -308,4 +312,3 @@ def recommend_fonts_and_colors_for_banner(
         "festival_color_period_placeholder": color_period,
         "festival_color_location_placeholder": color_location,
     }
-

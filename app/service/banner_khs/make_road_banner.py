@@ -2,37 +2,28 @@
 """
 app/service/banner_khs/make_road_banner.py
 
-도로(4:1) 가로 현수막용 Seedream 입력/프롬프트 생성 + 생성 이미지 저장 모듈.
+도로(4:1) 가로 현수막용 Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + 폰트/색상 추천 + editor 저장 모듈.
 
 역할
-- 참고용 포스터 이미지(URL)와 축제 정보(한글)를 입력받아서
+- 참고용 포스터 이미지(URL 또는 로컬 파일 경로)와 축제 정보(한글)를 입력받아서
   1) OpenAI LLM으로 축제명/기간/장소를 영어로 번역하고
   2) 포스터 이미지를 시각적으로 분석해서 "축제 씬 묘사"를 영어로 만든 뒤
   3) 한글 자리수에 맞춘 플레이스홀더 텍스트(라틴 알파벳 시퀀스)를 사용해서
      4:1 도로용 현수막 프롬프트를 조립한다. (write_road_banner)
   4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 생성하고 저장한다. (create_road_banner)
-
-특징
-- 나중에 편집툴에서 한글로 교체할 수 있도록,
-  실제로 그려지는 텍스트는
-    * 축제명  : 한글 자릿수만큼 A, B, C, ... (A부터 시작하는 대문자 시퀀스)
-    * 축제기간: 숫자/기호는 그대로, 한글만 라틴 문자 시퀀스(기본 C부터)
-    * 축제장소: 한글 자릿수만큼 B, C, D, ... (B부터 시작하는 대문자 시퀀스)
-  로 마스킹해서 넘긴다.
-- 축제명이 가장 크고(배너 너비의 절반 정도 차지), 기간/장소는 그보다 작게 나오도록 프롬프트에 명시한다.
-
-전제 환경변수
-- OPENAI_API_KEY          : OpenAI API 키
-- BANNER_LLM_MODEL        : (선택) 기본값 "gpt-4o-mini"
-- ROAD_BANNER_MODEL       : (선택) 기본값 "bytedance/seedream-4"
-- ROAD_BANNER_SAVE_DIR    : (선택) 기본값 "app/data/road_banner"
+  5) 완성된 배너 이미지를 기반으로 폰트/색상 추천을 수행한다.
+  6) run_road_banner_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
+  7) python make_road_banner.py 로 단독 실행할 수 있다.
 """
 
 from __future__ import annotations
 
-import os
-import json
 import base64
+import json
+import os
+import shutil
+import sys
+import time
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -41,12 +32,27 @@ from typing import Any, Dict
 import requests
 import replicate
 from openai import OpenAI
-import time
+from dotenv import load_dotenv
 from replicate.exceptions import ModelError
 
-import mimetypes
+# -------------------------------------------------------------
+# 프로젝트 루트 및 .env 로딩 + sys.path 설정
+# -------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DATA_ROOT = PROJECT_ROOT / "app" / "data"  # ✅ app/data 아래로만 쓰기/읽기
 
+# C:\final_project\ACC\acc-ai\.env 로딩
+env_path = PROJECT_ROOT / ".env"
+load_dotenv(env_path)
 
+# app 패키지 import를 위해 루트를 sys.path에 추가
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# 폰트/색상 추천 모듈 import
+from app.service.font_color.banner_font_color_recommend import (  # noqa: E402
+    recommend_fonts_and_colors_for_banner,
+)
 
 # -------------------------------------------------------------
 # 전역 OpenAI 클라이언트
@@ -63,7 +69,7 @@ def get_openai_client() -> OpenAI:
 
 
 # -------------------------------------------------------------
-# 한글 포함 여부 + 자리수 플레이스홀더 유틸
+# 한글 판별 + 자리수 플레이스홀더 유틸
 # -------------------------------------------------------------
 _ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -113,23 +119,41 @@ def _build_placeholder_from_hangul(text: str, mask_char: str) -> str:
     return "".join(result).strip()
 
 
-def _download_image_bytes(url: str) -> bytes:
+# -------------------------------------------------------------
+# 포스터 이미지 로딩 (URL + 로컬 파일 모두 지원)
+# -------------------------------------------------------------
+def _download_image_bytes(path_or_url: str) -> bytes:
     """
-    포스터 이미지를 다운로드해서 raw bytes로 반환.
-    (LLM 시각 입력 또는 Seedream용)
+    path_or_url 이
+      - http://, https:// 로 시작하면 → HTTP GET
+      - 그 외 → 로컬 파일 경로로 간주 (상대경로면 PROJECT_ROOT 기준)
     """
-    try:
-        resp = requests.get(url, timeout=20)
-        resp.raise_for_status()
-        return resp.content
-    except Exception as e:
-        raise RuntimeError(f"failed to download poster image: {e}")
+    s = str(path_or_url or "").strip()
+    if not s:
+        raise RuntimeError("poster image path/url is empty")
+
+    # HTTP(S)인 경우
+    if s.startswith("http://") or s.startswith("https://"):
+        try:
+            resp = requests.get(s, timeout=20)
+            resp.raise_for_status()
+            return resp.content
+        except Exception as e:
+            raise RuntimeError(f"failed to download poster image: {e}")
+
+    # 로컬 파일인 경우
+    p = Path(s)
+    if not p.is_absolute():
+        p = PROJECT_ROOT / p  # ✅ 항상 프로젝트 루트 기준
+
+    if not p.is_file():
+        raise RuntimeError(f"poster image file not found: {p}")
+
+    return p.read_bytes()
 
 
 # -------------------------------------------------------------
 # 1) 한글 축제 정보 → 영어 번역 (씬 묘사용)
-#     - 실제 텍스트 라인에 쓰지는 않고,
-#       포스터 씬 묘사를 자연스럽게 만들기 위한 용도로만 사용
 # -------------------------------------------------------------
 def _translate_festival_ko_to_en(
     festival_name_ko: str,
@@ -266,12 +290,12 @@ def _build_scene_phrase_from_poster(
         "You will see a reference festival poster image and simple English metadata about the event.\n"
         "Analyze the image and text and respond with a single JSON object:\n"
         "{\n"
-        '  "base_scene_en": "...",\n'
-        '  "details_phrase_en": "..."\n'
+        '  \"base_scene_en\": \"...\",\n'
+        '  \"details_phrase_en\": \"...\"\n'
         "}\n\n"
         "- base_scene_en: a short English phrase that can complete the sentence "
-        '"Ultra-wide 4:1 illustration of ...". Do NOT mention aspect ratio, layout, or text placement. '
-        'Example: "a vibrant summer mud festival by the beach at sunset".\n'
+        "\"Ultra-wide 4:1 illustration of ...\". Do NOT mention aspect ratio, layout, or text placement. "
+        'Example: \"a vibrant summer mud festival by the beach at sunset\".\n'
         "- details_phrase_en: one concise sentence describing the key subjects, objects, and motion in the scene, "
         "such as crowds, stages, cars, mud splashes, rides, snow, lights, etc. "
         "This should describe what is happening visually, not how the text is placed.\n"
@@ -334,7 +358,7 @@ def _build_scene_phrase_from_poster(
         "wide 4:1 illustration of",
     ]:
         if lower.startswith(prefix):
-            base_scene_en = base_scene_en[len(prefix):].lstrip(" ,.-")
+            base_scene_en = base_scene_en[len(prefix) :].lstrip(" ,.-")
             break
 
     if not details_phrase_en:
@@ -351,8 +375,6 @@ def _build_scene_phrase_from_poster(
 # -------------------------------------------------------------
 # 3) 영어 씬 묘사 + 플레이스홀더 텍스트 → 최종 프롬프트 문자열
 # -------------------------------------------------------------
-
-
 def _build_road_banner_prompt_en(
     name_text: str,
     period_text: str,
@@ -370,13 +392,14 @@ def _build_road_banner_prompt_en(
     location_text = _norm(location_text)
 
     prompt = (
-        f"Ultra-wide 4:1 illustration of {base_scene_en}, "
+        f"Ultra-wide 4:1 festival banner illustration of {base_scene_en}, "
         "using the attached poster image only as reference for bright colors, lighting and atmosphere "
         f"but creating a completely new scene with {details_phrase_en}. "
-        "In the exact center of the banner, stack exactly three lines of text, all perfectly center-aligned horizontally. "
+        "Place three lines of text near the horizontal center of the banner, all perfectly center-aligned. "
         f"On the middle line, write \"{name_text}\" in extremely large, ultra-bold sans-serif letters, "
         "the largest text in the entire image and clearly readable from a very long distance. "
-        f"On the top line, directly above the title, write \"{period_text}\" in smaller bold sans-serif letters. "
+        f"On the top line, directly above the title, write \"{period_text}\" in smaller bold sans-serif letters, "
+        "but still clearly readable from far away. "
         f"On the bottom line, directly below the title, write \"{location_text}\" in a size slightly smaller than the top line. "
         "All three lines must be drawn in the foremost visual layer, clearly on top of every background element, "
         "character, object, and effect in the scene, and nothing may overlap, cover, or cut through any part of the letters. "
@@ -390,9 +413,27 @@ def _build_road_banner_prompt_en(
         "The quotation marks in this prompt are for instruction only; do not draw quotation marks in the final image."
     )
 
+    # f"초광각 4:1 축제 배너 일러스트 {base_scene_en},"
+    # "첨부된 포스터 이미지를 밝은 색상, 조명 및 분위기에만 참고할 수 있습니다."
+    # f"하지만 {details_phrase_en}으로 완전히 새로운 장면을 만들고 있습니다."
+    # 배너의 가로 중앙 근처에 세 줄의 텍스트를 배치하고, 모두 완벽하게 중앙에 정렬합니다
+    # f"가운데 줄에 \\"{name_text}\"를 매우 크고 굵은 산세리프 문자로 씁니다,"
+    # "전체 이미지에서 가장 큰 텍스트이며 매우 먼 거리에서도 명확하게 읽을 수 있습니다."
+    # f"제목 바로 위의 맨 위 줄에 \\"{period_text}\"를 작은 굵은 산세리프 문자로 씁니다,"
+    # "하지만 여전히 멀리서도 분명히 읽을 수 있습니다."
+    # f"아래쪽 줄에는 제목 바로 아래에 \\"{location_text}\\"라고 맨 위 줄보다 약간 작은 크기로 적습니다."
+    # "세 줄 모두 모든 배경 요소 위에 명확하게 가장 앞쪽 시각적 층에 그려야 합니다,"
+    # "장면에서 등장인물, 객체, 효과는 글자의 어떤 부분도 겹치거나 덮거나 자를 수 없습니다."
+    # "이 세 줄의 텍스트를 각각 한 번씩 정확하게 그리세요. 두 번째 복사본, 그림자 복사본, 반사를 그리지 마세요,"
+    # "이미지의 다른 부분에 있는 이 텍스트의 mirrored 사본, 개요 전용 사본, 흐릿한 사본 또는 부분 사본"
+    # 지상, 하늘, 물, 건물, 장식 또는 인터페이스 요소를 포함하여
+    # "다른 텍스트는 전혀 추가하지 마세요: 단어, 라벨, 날짜, 숫자, 로고, 워터마크 또는 UI 요소는 추가하지 마세요."
+    # "이 세 줄을 beyond."
+    # "글을 배너, 간판, 패널, 상자, 프레임, 리본 또는 물리적 보드에 배치하지 마십시오;"
+    # 배경 바로 위에 깨끗한 떠다니는 글자만 그립니다
+    # "이 프롬프트의 따옴표는 지시용이므로 최종 이미지에 따옴표를 그리지 마세요."
+
     return prompt.strip()
-
-
 
 
 # -------------------------------------------------------------
@@ -406,37 +447,6 @@ def write_road_banner(
 ) -> Dict[str, Any]:
     """
     도로(4:1) 가로 현수막용 Seedream 입력 JSON을 생성한다.
-
-    입력:
-        poster_image_url    : 참고용 포스터 이미지 URL
-        festival_name_ko    : 축제명 (한글)
-        festival_period_ko  : 축제 기간 (한글 또는 숫자/영문)
-        festival_location_ko: 축제 장소 (한글 또는 영문)
-
-    출력 (Seedream / Replicate 등에 바로 넣을 수 있는 dict):
-
-    {
-      "size": "custom",
-      "width": 4096,
-      "height": 1024,
-      "prompt": "<영문 프롬프트 문자열>",
-      "max_images": 1,
-      "aspect_ratio": "match_input_image",
-      "enhance_prompt": true,
-      "sequential_image_generation": "disabled",
-      "image_input": [
-        {
-          "type": "image_url",
-          "url": "<poster_image_url>"
-        }
-      ],
-      "festival_name_placeholder": "2025 ABCDEF",
-      "festival_period_placeholder": "2025.08.15 ~ 2025.08.20",
-      "festival_location_placeholder": "BCDE FGHIJKLM NO",
-      "festival_base_name_placeholder": "제 11회 해운대 빛 축제",
-      "festival_base_period_placeholder": "2024.12.14 ~ 2025.02.02",
-      "festival_base_location_placeholder": "부산 해운대 일대"
-    }
     """
 
     # 1) 한글 축제 정보 → 영어 번역 (씬 묘사용)
@@ -452,19 +462,15 @@ def write_road_banner(
 
     # 2) 자리수 맞춘 플레이스홀더 + 원본 한글 텍스트 보존
     placeholders: Dict[str, str] = {
-        # 축제명: A부터 시작하는 시퀀스
         "festival_name_placeholder": _build_placeholder_from_hangul(
             festival_name_ko, "A"
         ),
-        # 축제기간: 숫자/기호는 그대로, 한글만 C부터 시작하는 시퀀스
         "festival_period_placeholder": _build_placeholder_from_hangul(
             festival_period_ko, "C"
         ),
-        # 축제장소: B부터 시작하는 시퀀스
         "festival_location_placeholder": _build_placeholder_from_hangul(
             festival_location_ko, "B"
         ),
-        # 🔹 원본 한글 텍스트도 그대로 같이 넣어줌 (나중에 폰트/색상 추천용)
         "festival_base_name_placeholder": str(festival_name_ko or ""),
         "festival_base_period_placeholder": str(festival_period_ko or ""),
         "festival_base_location_placeholder": str(festival_location_ko or ""),
@@ -481,7 +487,6 @@ def write_road_banner(
     # 4) 최종 프롬프트 조립
     prompt = _build_road_banner_prompt_en(
         name_text=placeholders["festival_name_placeholder"],
-        # 기간 플레이스홀더가 비어 있으면 번역된/원본 period_en 사용
         period_text=placeholders["festival_period_placeholder"] or period_en,
         location_text=placeholders["festival_location_placeholder"],
         base_scene_en=scene_info["base_scene_en"],
@@ -505,10 +510,7 @@ def write_road_banner(
             }
         ],
     }
-
-    # 🔹 플레이스홀더 + 원본 한글도 같이 포함
     seedream_input.update(placeholders)
-
     return seedream_input
 
 
@@ -517,26 +519,37 @@ def write_road_banner(
 # -------------------------------------------------------------
 def _extract_poster_url_from_input(seedream_input: Dict[str, Any]) -> str:
     """
-    seedream_input["image_input"] 에서 실제 포스터 URL을 찾아낸다.
-    지원 형태:
-      - [{"type": "image_url", "url": "..."}]
-      - ["http://..."]
-      - {"url": "..."}
+    seedream_input["image_input"] 에서 실제 포스터 URL 또는 로컬 경로를 찾아낸다.
     """
     image_input = seedream_input.get("image_input")
 
-    # 리스트 형태
     if isinstance(image_input, list) and image_input:
         first = image_input[0]
         if isinstance(first, dict):
             return first.get("url") or first.get("image_url") or ""
         if isinstance(first, str):
             return first
-    # dict 형태
     if isinstance(image_input, dict):
         return image_input.get("url") or image_input.get("image_url") or ""
 
     return ""
+
+
+def _get_road_banner_save_dir() -> Path:
+    """
+    ROAD_BANNER_SAVE_DIR 환경변수가 있으면:
+      - 절대경로면 그대로 사용
+      - 상대경로면 PROJECT_ROOT 기준으로 사용
+    없으면:
+      - PROJECT_ROOT/app/data/road_banner 사용
+    """
+    env_dir = os.getenv("ROAD_BANNER_SAVE_DIR")
+    if env_dir:
+        p = Path(env_dir)
+        if not p.is_absolute():
+            p = PROJECT_ROOT / p
+        return p
+    return DATA_ROOT / "road_banner"
 
 
 def _save_image_from_file_output(
@@ -551,7 +564,6 @@ def _save_image_from_file_output(
     ext = ".png"
     url: str | None = None
 
-    # FileOutput 객체인 경우
     if hasattr(file_output, "url") and callable(file_output.url):
         try:
             url = file_output.url()
@@ -565,11 +577,11 @@ def _save_image_from_file_output(
         if "." in name_part:
             ext = "." + name_part.split(".")[-1]
 
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    filename = f"{prefix}{timestamp}{ext}"
+    # ✅ 여기부터 파일명 고정 로직
+    base_name = (prefix or "road_banner").rstrip("_")
+    filename = f"{base_name}{ext}"
     filepath = save_dir / filename
 
-    # 실제 바이너리 읽기
     if hasattr(file_output, "read") and callable(file_output.read):
         data: bytes = file_output.read()
     elif isinstance(url, str):
@@ -585,37 +597,16 @@ def _save_image_from_file_output(
     return str(filepath), filename
 
 
+
 # -------------------------------------------------------------
 # 6) create_road_banner: Seedream JSON → Replicate 호출 → 이미지 저장
-#     + 플레이스홀더까지 같이 반환
 # -------------------------------------------------------------
-
 def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
     """
-    /road-banner/write 에서 만든 Seedream 입력 JSON을 그대로 받아
-    1) image_input 에서 포스터 URL을 추출하고,
-    2) 그 이미지를 다운로드해 파일 객체로 만든 뒤,
-    3) Replicate(bytedance/seedream-4)에 prompt + image_input과 함께 전달해
-       실제 4:1 가로 현수막 이미지를 생성하고,
-    4) 생성된 이미지를 로컬에 저장한다.
-
-    반환:
-    {
-      "image_path": "...",
-      "image_filename": "...",
-      "prompt": "...",
-      "width": 4096,
-      "height": 1024,
-      "festival_name_placeholder": "...",
-      "festival_period_placeholder": "...",
-      "festival_location_placeholder": "...",
-      "festival_base_name_placeholder": "...",
-      "festival_base_period_placeholder": "...",
-      "festival_base_location_placeholder": "..."
-    }
+    write_road_banner(...) 에서 만든 Seedream JSON을 받아
+    Seedream-4(Replicate)로 이미지를 생성하고 저장한다.
     """
 
-    # 🔹 입력 JSON에서 플레이스홀더 + 원본 한글 그대로 꺼냄
     festival_name_placeholder = str(seedream_input.get("festival_name_placeholder", ""))
     festival_period_placeholder = str(
         seedream_input.get("festival_period_placeholder", "")
@@ -634,18 +625,14 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
         seedream_input.get("festival_base_location_placeholder", "")
     )
 
-    # 1) 포스터 URL 추출
     poster_url = _extract_poster_url_from_input(seedream_input)
     if not poster_url:
         raise ValueError("seedream_input.image_input 에 참조 포스터 이미지 URL이 없습니다.")
 
-    # 2) 포스터 이미지 다운로드 → 파일 객체
-    resp = requests.get(poster_url, timeout=30)
-    resp.raise_for_status()
-    img_bytes = resp.content
+    # URL이든 로컬 파일이든 동일하게 처리
+    img_bytes = _download_image_bytes(poster_url)
     image_file = BytesIO(img_bytes)
 
-    # 3) Replicate에 넘길 input 구성
     prompt = seedream_input.get("prompt", "")
     size = seedream_input.get("size", "custom")
     width = int(seedream_input.get("width", 4096))
@@ -663,7 +650,7 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
         "height": height,
         "prompt": prompt,
         "max_images": max_images,
-        "image_input": [image_file],  # Replicate에는 실제 파일 객체로 전달
+        "image_input": [image_file],
         "aspect_ratio": aspect_ratio,
         "enhance_prompt": enhance_prompt,
         "sequential_image_generation": sequential_image_generation,
@@ -671,32 +658,27 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
 
     model_name = os.getenv("ROAD_BANNER_MODEL", "bytedance/seedream-4")
 
-    # 🔁 Seedream / Replicate 일시 오류(PA 등)에 대비한 재시도 로직
     output = None
     last_err: Exception | None = None
 
-    for attempt in range(3):  # 최대 3번까지 시도
+    for _ in range(3):
         try:
             output = replicate.run(model_name, input=replicate_input)
-            break  # 성공하면 루프 탈출
+            break
         except ModelError as e:
             msg = str(e)
-            # Prediction interrupted; please retry (code: PA) 같은 일시 오류만 재시도
             if "Prediction interrupted" in msg or "code: PA" in msg:
                 last_err = e
                 time.sleep(1.0)
                 continue
-            # 그 외 ModelError는 그대로 넘김
             raise RuntimeError(
                 f"Seedream model error during road banner generation: {e}"
             )
         except Exception as e:
-            # 네트워크 등 다른 예외는 바로 실패
             raise RuntimeError(
                 f"Unexpected error during road banner generation: {e}"
             )
 
-    # 3번 모두 실패한 경우
     if output is None:
         raise RuntimeError(
             f"Seedream model error during road banner generation after retries: {last_err}"
@@ -707,12 +689,11 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
 
     file_output = output[0]
 
-    save_base = Path(os.getenv("ROAD_BANNER_SAVE_DIR", "app/data/road_banner")).resolve()
+    save_base = _get_road_banner_save_dir()  # ✅ 항상 app/data/road_banner 쪽으로
     image_path, image_filename = _save_image_from_file_output(
         file_output, save_base, prefix="road_banner_"
     )
 
-    # 🔹 여기서 플레이스홀더 + 원본 한글까지 같이 반환 + width/height 추가
     return {
         "size": size,
         "width": width,
@@ -727,3 +708,212 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
         "festival_base_period_placeholder": festival_base_period_placeholder,
         "festival_base_location_placeholder": festival_base_location_placeholder,
     }
+
+
+# -------------------------------------------------------------
+# 7) editor 저장용 헬퍼 + main
+# -------------------------------------------------------------
+def _get_project_root() -> Path:
+    """
+    acc-ai 루트 디렉터리를 반환한다.
+    """
+    return PROJECT_ROOT
+
+
+def run_road_banner_to_editor(
+    run_id: int,
+    poster_image_url: str,
+    festival_name_ko: str,
+    festival_period_ko: str,
+    festival_location_ko: str,
+) -> Dict[str, Any]:
+    """
+    입력:
+        run_id
+        poster_image_url
+        festival_name_ko
+        festival_period_ko
+        festival_location_ko
+
+    동작:
+      1) write_road_banner(...) 로 seedream_input 생성
+      2) create_road_banner(...) 로 실제 배너 이미지 생성
+      3) recommend_fonts_and_colors_for_banner(...) 로 폰트/색상 추천
+      4) 결과 JSON + 이미지 사본을
+         app/data/editor/<run_id>/before_data, before_image 아래에 저장
+
+    반환:
+        editor에 저장된 경로까지 포함한 결과 dict
+    """
+
+    # 1) Seedream 입력 생성
+    seedream_input = write_road_banner(
+        poster_image_url=poster_image_url,
+        festival_name_ko=festival_name_ko,
+        festival_period_ko=festival_period_ko,
+        festival_location_ko=festival_location_ko,
+    )
+
+    # 2) 실제 배너 이미지 생성
+    create_result = create_road_banner(seedream_input)
+
+    # 3) 폰트/색상 추천
+    font_color_result = recommend_fonts_and_colors_for_banner(
+        banner_type="road_banner",
+        image_path=create_result["image_path"],
+        festival_name_placeholder=create_result["festival_name_placeholder"],
+        festival_period_placeholder=create_result["festival_period_placeholder"],
+        festival_location_placeholder=create_result["festival_location_placeholder"],
+        festival_base_name_placeholder=create_result["festival_base_name_placeholder"],
+        festival_base_period_placeholder=create_result[
+            "festival_base_period_placeholder"
+        ],
+        festival_base_location_placeholder=create_result[
+            "festival_base_location_placeholder"
+        ],
+    )
+
+    # 4) editor 디렉터리 준비  ✅ app/data/editor/<run_id>/...
+    editor_root = DATA_ROOT / "editor" / str(run_id)
+    before_data_dir = editor_root / "before_data"
+    before_image_dir = editor_root / "before_image"
+    before_data_dir.mkdir(parents=True, exist_ok=True)
+    before_image_dir.mkdir(parents=True, exist_ok=True)
+
+    # 5) 결과 dict 구성
+    result: Dict[str, Any] = {
+        "run_id": int(run_id),
+        "status": "success",
+        "type": "road_banner",
+        "poster_image_url": poster_image_url,
+        "festival_name_ko": festival_name_ko,
+        "festival_period_ko": festival_period_ko,
+        "festival_location_ko": festival_location_ko,
+        **create_result,
+        **font_color_result,
+    }
+
+    original_image_path = create_result.get("image_path") or ""
+    result["generated_image_path"] = original_image_path
+
+    # 6) 이미지 파일을 before_image 밑으로 "이동" (원본은 삭제)
+    editor_image_path: str | None = None
+    if original_image_path:
+        src_image = Path(original_image_path)
+        if src_image.exists():
+            dest_image = before_image_dir / src_image.name
+            try:
+                # 1순위: 파일을 road_banner → editor/before_image 로 이동
+                src_image.replace(dest_image)
+            except Exception:
+                # 이동 실패하면 복사 후 원본 삭제 시도
+                import shutil
+
+                try:
+                    shutil.copy2(src_image, dest_image)
+                    try:
+                        src_image.unlink(missing_ok=True)
+                    except Exception:
+                        # 삭제 실패해도 죽지는 않게 그냥 무시
+                        pass
+                except Exception as e:
+                    result["status"] = "warning"
+                    result["image_copy_error"] = str(e)
+                    dest_image = None
+
+            if dest_image and dest_image.exists():
+                editor_image_path = str(dest_image.resolve())
+                result["image_path"] = editor_image_path
+                result["editor_image_path"] = editor_image_path
+        else:
+            result["status"] = "warning"
+            result["image_copy_error"] = (
+                f"generated image not found: {original_image_path}"
+            )
+
+    # 7) before_data 밑에 JSON 저장
+    image_filename = result.get("image_filename") or ""
+    if image_filename:
+        stem = Path(image_filename).stem
+        json_name = f"{stem}.json"
+    else:
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        json_name = f"road_banner_{ts}.json"
+
+    json_path = before_data_dir / json_name
+    with json_path.open("w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+
+    result["editor_json_path"] = str(json_path.resolve())
+
+    return result
+
+
+def main() -> None:
+    """
+    CLI 실행용 진입점.
+
+    ✅ 콘솔에서:
+        python make_road_banner.py
+
+    를 실행하면, 아래에 적어둔 입력값으로
+    - 도로 배너 생성 (Seedream)
+    - 폰트/색상 추천
+    - app/data/editor/<run_id>/before_data, before_image 저장
+    까지 한 번에 수행한다.
+    """
+
+    # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
+    run_id = 3  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+
+    # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
+    poster_image_url = str(DATA_ROOT / "banner" / "andong.png")
+    festival_name_ko = "2024 안동국제 탈춤 페스티벌"
+    festival_period_ko = "2025.09.26 ~ 10.05"
+    festival_location_ko = "중앙선1942안동역, 원도심, 탈춤공원 일원"
+
+    # 2) 혹시라도 비어 있으면 바로 알려주기
+    missing = []
+    if not poster_image_url:
+        missing.append("poster_image_url")
+    if not festival_name_ko:
+        missing.append("festival_name_ko")
+    if not festival_period_ko:
+        missing.append("festival_period_ko")
+    if not festival_location_ko:
+        missing.append("festival_location_ko")
+
+    if missing:
+        print("⚠️ main() 안에 아래 값들을 채워주세요:")
+        for k in missing:
+            print("  -", k)
+        return
+
+    # 3) 실제 실행
+    result = run_road_banner_to_editor(
+        run_id=run_id,
+        poster_image_url=poster_image_url,
+        festival_name_ko=festival_name_ko,
+        festival_period_ko=festival_period_ko,
+        festival_location_ko=festival_location_ko,
+    )
+
+    print("✅ road banner 생성 + 폰트/색상 추천 + editor 저장 완료")
+    print("  run_id            :", result.get("run_id"))
+    print("  type              :", result.get("type"))
+    print("  editor_json_path  :", result.get("editor_json_path"))
+    print(
+        "  editor_image_path :",
+        result.get("editor_image_path", result.get("image_path")),
+    )
+    print("  generated_image_path :", result.get("generated_image_path"))
+    print("  font_name         :", result.get("festival_font_name_placeholder"))
+    print("  font_period       :", result.get("festival_font_period_placeholder"))
+    print("  font_location     :", result.get("festival_font_location_placeholder"))
+    print("  color_name        :", result.get("festival_color_name_placeholder"))
+    print("  color_period      :", result.get("festival_color_period_placeholder"))
+    print("  color_location    :", result.get("festival_color_location_placeholder"))
+
+
+if __name__ == "__main__":
+    main()

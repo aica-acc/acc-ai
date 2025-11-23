@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import routes_festival, routes_images, routes_poster, routes_banner, routes_proposal, routes_poster_khs
+from app.api import routes_festival, routes_images, routes_poster, routes_banner, routes_proposal, routes_poster_khs, routes_operate
 from fastapi.staticfiles import StaticFiles
 
 from app.api.banner import routes_road_banner, routes_streetlamp_banner
@@ -15,6 +15,7 @@ app.include_router(routes_proposal.router)
 app.include_router(routes_poster_khs.router)
 app.include_router(routes_road_banner.router)
 app.include_router(routes_streetlamp_banner.router)
+#app.include_router(routes_operate.router)
 # app.include_router(routes_total_trend.router)
 
 # app/api/data 폴더를 /static 이라는 URL로 매핑
