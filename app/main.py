@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import routes_festival, routes_images, routes_poster, routes_proposal, routes_total_trend
 from fastapi.staticfiles import StaticFiles
+from app.api import routes_liveposter
 import os
 
 app = FastAPI(title="Festival Promotion API")
@@ -24,7 +25,9 @@ app.include_router(routes_images.router)
 app.include_router(routes_poster.router)
 app.include_router(routes_proposal.router)
 app.include_router(routes_total_trend.router)
+app.include_router(routes_liveposter.router)
 
 @app.get("/")
 def root():
     return {"message": "Festival Promotion API is running"}
+

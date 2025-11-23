@@ -23,7 +23,8 @@ wheels/
 *ttf
 *otf
 *.txt
-
+service_account.json
+check_model.py
 # test 코드
 __init__.py
 
