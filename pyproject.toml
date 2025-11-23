@@ -22,7 +22,7 @@ dependencies = [
     "google-auth>=2.41.1",
     "google-auth-oauthlib>=1.2.2",
     # --- 환경변수 관리 ---
-    "pyuv,
+    "python-dotenv>=1.0.1",
     # --- LangChain / LangGraph ---
     "langchain>=0.3.27",
     "langchain-core>=0.3.79",
