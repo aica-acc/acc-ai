@@ -601,10 +601,17 @@ def _save_image_from_file_output(
 # -------------------------------------------------------------
 # 6) create_road_banner: Seedream JSON → Replicate 호출 → 이미지 저장
 # -------------------------------------------------------------
-def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
+def create_road_banner(
+    seedream_input: Dict[str, Any],
+    save_dir: Path | None = None,
+    prefix: str = "road_banner_",
+) -> Dict[str, Any]:
     """
     write_road_banner(...) 에서 만든 Seedream JSON을 받아
     Seedream-4(Replicate)로 이미지를 생성하고 저장한다.
+
+    save_dir 가 주어지면 그 디렉터리에 저장하고,
+    없으면 ROAD_BANNER_SAVE_DIR / app/data/road_banner 에 저장한다.
     """
 
     festival_name_placeholder = str(seedream_input.get("festival_name_placeholder", ""))
@@ -689,9 +696,14 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
 
     file_output = output[0]
 
-    save_base = _get_road_banner_save_dir()  # ✅ 항상 app/data/road_banner 쪽으로
+    # ✅ save_dir 가 있으면 그쪽으로 바로 저장, 없으면 기존 road_banner 디렉터리 사용
+    if save_dir is None:
+        save_base = _get_road_banner_save_dir()
+    else:
+        save_base = Path(save_dir)
+
     image_path, image_filename = _save_image_from_file_output(
-        file_output, save_base, prefix="road_banner_"
+        file_output, save_base, prefix=prefix,
     )
 
     return {
@@ -708,6 +720,7 @@ def create_road_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
         "festival_base_period_placeholder": festival_base_period_placeholder,
         "festival_base_location_placeholder": festival_base_location_placeholder,
     }
+
 
 
 # -------------------------------------------------------------
@@ -737,13 +750,10 @@ def run_road_banner_to_editor(
 
     동작:
       1) write_road_banner(...) 로 seedream_input 생성
-      2) create_road_banner(...) 로 실제 배너 이미지 생성
+      2) create_road_banner(...) 로 실제 배너 이미지 생성 (곧바로 editor/before_image 에 저장)
       3) recommend_fonts_and_colors_for_banner(...) 로 폰트/색상 추천
       4) 결과 JSON + 이미지 사본을
          app/data/editor/<run_id>/before_data, before_image 아래에 저장
-
-    반환:
-        editor에 저장된 경로까지 포함한 결과 dict
     """
 
     # 1) Seedream 입력 생성
@@ -754,10 +764,21 @@ def run_road_banner_to_editor(
         festival_location_ko=festival_location_ko,
     )
 
-    # 2) 실제 배너 이미지 생성
-    create_result = create_road_banner(seedream_input)
+    # 2) editor 디렉터리 준비  ✅ app/data/editor/<run_id>/...
+    editor_root = DATA_ROOT / "editor" / str(run_id)
+    before_data_dir = editor_root / "before_data"
+    before_image_dir = editor_root / "before_image"
+    before_data_dir.mkdir(parents=True, exist_ok=True)
+    before_image_dir.mkdir(parents=True, exist_ok=True)
 
-    # 3) 폰트/색상 추천
+    # 3) 실제 배너 이미지 생성 (저장 위치를 before_image_dir 로 바로 지정)
+    create_result = create_road_banner(
+        seedream_input,
+        save_dir=before_image_dir,
+        prefix="road_banner_",
+    )
+
+    # 4) 폰트/색상 추천
     font_color_result = recommend_fonts_and_colors_for_banner(
         banner_type="road_banner",
         image_path=create_result["image_path"],
@@ -773,13 +794,6 @@ def run_road_banner_to_editor(
         ],
     )
 
-    # 4) editor 디렉터리 준비  ✅ app/data/editor/<run_id>/...
-    editor_root = DATA_ROOT / "editor" / str(run_id)
-    before_data_dir = editor_root / "before_data"
-    before_image_dir = editor_root / "before_image"
-    before_data_dir.mkdir(parents=True, exist_ok=True)
-    before_image_dir.mkdir(parents=True, exist_ok=True)
-
     # 5) 결과 dict 구성
     result: Dict[str, Any] = {
         "run_id": int(run_id),
@@ -793,45 +807,17 @@ def run_road_banner_to_editor(
         **font_color_result,
     }
 
-    original_image_path = create_result.get("image_path") or ""
-    result["generated_image_path"] = original_image_path
+    # 생성된 이미지는 이미 before_image_dir 에 저장됨
+    editor_image_path = create_result.get("image_path") or ""
+    result["generated_image_path"] = editor_image_path
+    if editor_image_path:
+        result["image_path"] = editor_image_path
+        result["editor_image_path"] = editor_image_path
+    else:
+        result["status"] = "warning"
+        result["image_copy_error"] = "image_path missing in create_result"
 
-    # 6) 이미지 파일을 before_image 밑으로 "이동" (원본은 삭제)
-    editor_image_path: str | None = None
-    if original_image_path:
-        src_image = Path(original_image_path)
-        if src_image.exists():
-            dest_image = before_image_dir / src_image.name
-            try:
-                # 1순위: 파일을 road_banner → editor/before_image 로 이동
-                src_image.replace(dest_image)
-            except Exception:
-                # 이동 실패하면 복사 후 원본 삭제 시도
-                import shutil
-
-                try:
-                    shutil.copy2(src_image, dest_image)
-                    try:
-                        src_image.unlink(missing_ok=True)
-                    except Exception:
-                        # 삭제 실패해도 죽지는 않게 그냥 무시
-                        pass
-                except Exception as e:
-                    result["status"] = "warning"
-                    result["image_copy_error"] = str(e)
-                    dest_image = None
-
-            if dest_image and dest_image.exists():
-                editor_image_path = str(dest_image.resolve())
-                result["image_path"] = editor_image_path
-                result["editor_image_path"] = editor_image_path
-        else:
-            result["status"] = "warning"
-            result["image_copy_error"] = (
-                f"generated image not found: {original_image_path}"
-            )
-
-    # 7) before_data 밑에 JSON 저장
+    # 6) before_data 밑에 JSON 저장
     image_filename = result.get("image_filename") or ""
     if image_filename:
         stem = Path(image_filename).stem
@@ -849,6 +835,7 @@ def run_road_banner_to_editor(
     return result
 
 
+
 def main() -> None:
     """
     CLI 실행용 진입점.
@@ -864,13 +851,13 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 3  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+    run_id = 4  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
     # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
-    poster_image_url = str(DATA_ROOT / "banner" / "andong.png")
-    festival_name_ko = "2024 안동국제 탈춤 페스티벌"
-    festival_period_ko = "2025.09.26 ~ 10.05"
-    festival_location_ko = "중앙선1942안동역, 원도심, 탈춤공원 일원"
+    poster_image_url = str(DATA_ROOT / "banner" / "busan.png")
+    festival_name_ko = "제12회 해운대 빛축제"
+    festival_period_ko = "2025.11.29 ~ 2026.01.18"
+    festival_location_ko = "해운대해수욕장 구남로 일원"
 
     # 2) 혹시라도 비어 있으면 바로 알려주기
     missing = []

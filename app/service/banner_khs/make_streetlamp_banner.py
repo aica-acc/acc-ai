@@ -18,7 +18,7 @@ app/service/banner_khs/make_streetlamp_banner.py
 - OPENAI_API_KEY               : OpenAI API 키
 - BANNER_LLM_MODEL             : (선택) 기본값 "gpt-4o-mini"
 - STREETLAMP_BANNER_MODEL      : (선택) 기본값 "bytedance/seedream-4"
-- STREETLAMP_BANNER_SAVE_DIR   : (선택)
+- STREETLAMP_BANNER_SAVE_DIR   : (선택, 직접 create_streetlamp_banner 를 쓸 때용)
     * 절대경로면 그대로 사용
     * 상대경로면 acc-ai 프로젝트 루트 기준
     * 미설정 시 PROJECT_ROOT/app/data/streetlamp_banner 사용
@@ -54,7 +54,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # -------------------------------------------------------------
 # 기존 road_banner 유틸 재사용
 # -------------------------------------------------------------
-from app.service.banner_khs.make_road_banner import (
+from app.service.banner_khs.make_road_banner import (  # type: ignore
     _build_placeholder_from_hangul,
     _translate_festival_ko_to_en,
     _build_scene_phrase_from_poster,
@@ -64,7 +64,7 @@ from app.service.banner_khs.make_road_banner import (
 )
 
 # 폰트/색상 추천 모듈 (road-banner와 동일한 모듈 사용)
-from app.service.font_color.banner_font_color_recommend import (
+from app.service.font_color.banner_font_color_recommend import (  # type: ignore
     recommend_fonts_and_colors_for_banner,
 )
 
@@ -122,38 +122,6 @@ def _build_streetlamp_banner_prompt_en(
         "The quotation marks in this prompt are for instruction only; do not draw quotation marks in the final image."
     )
 
-    # f"{base_scene_en}의 높이 1:3 세로 삽화,"
-    # "첨부된 포스터 이미지를 밝은 색상, 조명 및 분위기에만 참고할 수 있습니다."
-    # f"하지만 {details_phrase_en}으로 완전히 새로운 장면을 만들고 있습니다."
-    # "이 이미지를 깨끗한 독립형 1:3 수직 축제 배너 아트워크로 디자인하세요,"
-    # 가로등, 기둥, 철조망, 벽, 건물에 걸려 있는 것이 표시되지 않으며, 주변 도로나 환경이 없습니다
-    # 배너가 인쇄되거나 다듬어질 때 중요한 텍스트가 잘리지 않도록 상단과 하단에 작은 안전 여백을 남겨두세요
-
-    # 배너의 상단 중앙 영역에 완벽하게 중앙에 정렬된 세 줄의 가로 텍스트를 정확히 배치합니다
-    # "중간 제목 줄이 위아래로 넉넉한 세로 간격을 가지도록 배열하세요,"
-    # "clearly는 다른 두 선과 분리되어 있으며, 위쪽과 아래쪽 선은 컴팩트한 쌍으로 비교적 가깝게 유지됩니다,"
-    # "기간과 장소가 서로 멀리 떨어져 있지 않도록."
-
-    # f"가운데 줄에 \\"{name_text}\"를 매우 크고 굵은 산세리프 문자로 씁니다,"
-    # "전체 이미지에서 가장 큰 텍스트이며 매우 먼 거리에서도 명확하게 읽을 수 있습니다."
-    # "이 제목 블록을 너무 크게 만들어서 배너의 상단 중앙 영역을 시각적으로 지배하세요,"
-    # "그리고 그것은 절대 작은 자막이나 자막처럼 보여서는 안 됩니다."
-    # f"제목 위 상단 줄에 작은 굵은 산세리프 문자로 \\"{period_text}\\"라고 적습니다,"
-    # "하지만 여전히 이 글자들은 작은 캡션 텍스트가 아닌 멀리서도 크고 밝고 선명하게 읽을 수 있도록 유지하세요."
-    # f"아래쪽 줄에는 제목 아래에 위쪽 줄보다 약간 작은 크기로 \\"{location_text}\\"라고 적습니다."
-    # "하지만 여전히 대담한 헤드라인 텍스트로, 결코 얇거나 미묘하지 않습니다."
-
-    # "세 줄 모두 모든 배경 요소 위에 명확하게 가장 앞쪽 시각적 층에 그려야 합니다,"
-    # "장면에서 등장인물, 객체, 효과는 글자의 어떤 부분도 겹치거나 덮거나 자를 수 없습니다."
-    # "이 세 줄의 텍스트를 각각 한 번씩 정확하게 그리세요. 두 번째 복사본, 그림자 복사본, 반사를 그리지 마세요,"
-    # "이미지의 다른 부분에 있는 이 텍스트의 mirrored 사본, 개요 전용 사본, 흐릿한 사본 또는 부분 사본"
-    # 지상, 하늘, 건물, 장식 또는 인터페이스 요소를 포함하여
-    # "다른 텍스트는 전혀 추가하지 마세요: 단어, 라벨, 날짜, 숫자, 로고, 워터마크 또는 UI 요소는 추가하지 마세요."
-    # "이 세 줄을 beyond."
-    # "텍스트를 별도의 배너, 간판, 패널, 상자, 프레임, 리본 또는 물리적 보드에 배치하지 마십시오;"
-    # 배경 바로 위에 깨끗한 떠다니는 글자만 그립니다
-    # "이 프롬프트의 따옴표는 지시용이므로 최종 이미지에 따옴표를 그리지 마세요."
-
     return prompt.strip()
 
 
@@ -167,13 +135,7 @@ def write_streetlamp_banner(
     festival_location_ko: str,
 ) -> Dict[str, Any]:
     """
-    가로등(1:3) 세로 현수막용 Seedream 입력 JSON을 생성한다.
-
-    입력:
-        poster_image_url    : 참고용 포스터 이미지 URL 또는 로컬 파일 경로
-        festival_name_ko    : 축제명 (한글)
-        festival_period_ko  : 축제 기간 (한글 또는 숫자/영문)
-        festival_location_ko: 축제 장소 (한글 또는 영문)
+    가로등(1:3, 1024x3072) 세로 현수막용 Seedream 입력 JSON을 생성한다.
     """
 
     # 1) 한글 축제 정보 → 영어 번역 (씬 묘사용)
@@ -189,19 +151,15 @@ def write_streetlamp_banner(
 
     # 2) 자리수 맞춘 플레이스홀더 + 원본 한글 텍스트 보존
     placeholders: Dict[str, str] = {
-        # 축제명: A부터 시작하는 시퀀스
         "festival_name_placeholder": _build_placeholder_from_hangul(
             festival_name_ko, "A"
         ),
-        # 축제기간: 숫자/기호는 그대로, 한글만 C부터 시작하는 시퀀스
         "festival_period_placeholder": _build_placeholder_from_hangul(
             festival_period_ko, "C"
         ),
-        # 축제장소: B부터 시작하는 시퀀스
         "festival_location_placeholder": _build_placeholder_from_hangul(
             festival_location_ko, "B"
         ),
-        # 원본 한글 텍스트도 그대로 같이 넣어줌 (나중에 폰트/색상 추천 등에서 활용 가능)
         "festival_base_name_placeholder": str(festival_name_ko or ""),
         "festival_base_period_placeholder": str(festival_period_ko or ""),
         "festival_base_location_placeholder": str(festival_location_ko or ""),
@@ -225,7 +183,6 @@ def write_streetlamp_banner(
     )
 
     # 5) Seedream / Replicate 입력 JSON 구성
-    #   - 1:3 비율 예시: width=1024, height=3072
     seedream_input: Dict[str, Any] = {
         "size": "custom",
         "width": 1024,
@@ -243,14 +200,12 @@ def write_streetlamp_banner(
         ],
     }
 
-    # 플레이스홀더 + 원본 한글도 같이 포함
     seedream_input.update(placeholders)
-
     return seedream_input
 
 
 # -------------------------------------------------------------
-# 3) streetlamp 저장 디렉터리 결정 (PROJECT_ROOT/app/data/streetlamp_banner 기본)
+# 3) streetlamp 저장 디렉터리 결정 (직접 create_streetlamp_banner 쓸 때용)
 # -------------------------------------------------------------
 def _get_streetlamp_banner_save_dir() -> Path:
     """
@@ -259,6 +214,9 @@ def _get_streetlamp_banner_save_dir() -> Path:
       - 상대경로면 PROJECT_ROOT 기준으로 사용
     없으면:
       - PROJECT_ROOT/app/data/streetlamp_banner 사용
+
+    run_streetlamp_banner_to_editor(...) 에서는 이 경로를 사용하지 않고,
+    곧바로 editor/<run_id>/before_image 에 저장한다.
     """
     env_dir = os.getenv("STREETLAMP_BANNER_SAVE_DIR")
     if env_dir:
@@ -273,7 +231,10 @@ def _get_streetlamp_banner_save_dir() -> Path:
 # 4) create_streetlamp_banner: Seedream JSON → Replicate 호출 → 이미지 저장
 #     + 플레이스홀더까지 같이 반환
 # -------------------------------------------------------------
-def create_streetlamp_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
+def create_streetlamp_banner(
+    seedream_input: Dict[str, Any],
+    save_dir: Path | None = None,
+) -> Dict[str, Any]:
     """
     write_streetlamp_banner(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
     1) image_input 에서 포스터 URL/경로를 추출하고,
@@ -282,18 +243,8 @@ def create_streetlamp_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
        실제 1:3 세로 가로등 현수막 이미지를 생성하고,
     4) 생성된 이미지를 로컬에 저장한다.
 
-    반환:
-        {
-          "size", "width", "height",
-          "image_path", "image_filename",
-          "prompt",
-          "festival_name_placeholder",
-          "festival_period_placeholder",
-          "festival_location_placeholder",
-          "festival_base_name_placeholder",
-          "festival_base_period_placeholder",
-          "festival_base_location_placeholder",
-        }
+    save_dir 가 주어지면 해당 디렉터리에 바로 저장하고,
+    None 이면 STREETLAMP_BANNER_SAVE_DIR / streetlamp_banner 기본 경로를 사용한다.
     """
 
     # 입력 JSON에서 플레이스홀더 + 원본 한글 그대로 꺼냄
@@ -360,22 +311,18 @@ def create_streetlamp_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
             break  # 성공하면 루프 탈출
         except ModelError as e:
             msg = str(e)
-            # Prediction interrupted; please retry (code: PA) 같은 일시 오류만 재시도
             if "Prediction interrupted" in msg or "code: PA" in msg:
                 last_err = e
                 time.sleep(1.0)
                 continue
-            # 그 외 ModelError는 그대로 넘김
             raise RuntimeError(
                 f"Seedream model error during streetlamp banner generation: {e}"
             )
         except Exception as e:
-            # 네트워크 등 다른 예외는 바로 실패
             raise RuntimeError(
                 f"Unexpected error during streetlamp banner generation: {e}"
             )
 
-    # 3번 모두 실패한 경우
     if output is None:
         raise RuntimeError(
             f"Seedream model error during streetlamp banner generation after retries: {last_err}"
@@ -386,10 +333,13 @@ def create_streetlamp_banner(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
 
     file_output = output[0]
 
-    # road_banner 와 동일한 정책:
-    #   - 기본 저장 위치: PROJECT_ROOT/app/data/streetlamp_banner
-    #   - 파일명: streetlamp_banner.png (타임스탬프 없이 고정)
-    save_base = _get_streetlamp_banner_save_dir()
+    # 저장 위치 결정
+    if save_dir is not None:
+        save_base = Path(save_dir)
+    else:
+        save_base = _get_streetlamp_banner_save_dir()
+    save_base.mkdir(parents=True, exist_ok=True)
+
     image_path, image_filename = _save_image_from_file_output(
         file_output, save_base, prefix="streetlamp_banner_"
     )
@@ -431,10 +381,11 @@ def run_streetlamp_banner_to_editor(
 
     동작:
       1) write_streetlamp_banner(...) 로 seedream_input 생성
-      2) create_streetlamp_banner(...) 로 실제 배너 이미지 생성
+      2) create_streetlamp_banner(..., save_dir=before_image_dir) 로
+         실제 배너 이미지를 생성하고, 곧바로
+         app/data/editor/<run_id>/before_image 에 저장
       3) recommend_fonts_and_colors_for_banner(...) 로 폰트/색상 추천
-      4) 결과 JSON + 이미지 사본을
-         app/data/editor/<run_id>/before_data, before_image 아래에 저장
+      4) 결과 JSON 을 app/data/editor/<run_id>/before_data 아래에 저장
 
     반환:
         editor에 저장된 경로까지 포함한 결과 dict
@@ -448,10 +399,20 @@ def run_streetlamp_banner_to_editor(
         festival_location_ko=festival_location_ko,
     )
 
-    # 2) 실제 배너 이미지 생성
-    create_result = create_streetlamp_banner(seedream_input)
+    # 2) editor 디렉터리 준비  ✅ app/data/editor/<run_id>/...
+    editor_root = DATA_ROOT / "editor" / str(run_id)
+    before_data_dir = editor_root / "before_data"
+    before_image_dir = editor_root / "before_image"
+    before_data_dir.mkdir(parents=True, exist_ok=True)
+    before_image_dir.mkdir(parents=True, exist_ok=True)
 
-    # 3) 폰트/색상 추천
+    # 3) 실제 배너 이미지 생성 (바로 before_image 에 저장)
+    create_result = create_streetlamp_banner(
+        seedream_input,
+        save_dir=before_image_dir,
+    )
+
+    # 4) 폰트/색상 추천
     font_color_result = recommend_fonts_and_colors_for_banner(
         banner_type="streetlamp_banner",
         image_path=create_result["image_path"],
@@ -467,14 +428,9 @@ def run_streetlamp_banner_to_editor(
         ],
     )
 
-    # 4) editor 디렉터리 준비  ✅ app/data/editor/<run_id>/...
-    editor_root = DATA_ROOT / "editor" / str(run_id)
-    before_data_dir = editor_root / "before_data"
-    before_image_dir = editor_root / "before_image"
-    before_data_dir.mkdir(parents=True, exist_ok=True)
-    before_image_dir.mkdir(parents=True, exist_ok=True)
-
     # 5) 결과 dict 구성
+    original_image_path = create_result.get("image_path") or ""
+
     result: Dict[str, Any] = {
         "run_id": int(run_id),
         "status": "success",
@@ -485,48 +441,20 @@ def run_streetlamp_banner_to_editor(
         "festival_location_ko": festival_location_ko,
         **create_result,
         **font_color_result,
+        "generated_image_path": original_image_path,
     }
 
-    original_image_path = create_result.get("image_path") or ""
-    result["generated_image_path"] = original_image_path
-
-    # 6) 이미지 파일을 before_image 밑으로 "이동" (원본은 삭제)
-    editor_image_path: str | None = None
     if original_image_path:
-        src_image = Path(original_image_path)
-        if src_image.exists():
-            dest_image = before_image_dir / src_image.name
-            try:
-                # 1순위: streetlamp_banner → editor/before_image 로 이동
-                src_image.replace(dest_image)
-            except Exception:
-                import shutil
+        result["image_path"] = original_image_path
+        result["editor_image_path"] = original_image_path
+    else:
+        result["status"] = "warning"
+        result["image_copy_error"] = "generated image path is empty"
 
-                try:
-                    shutil.copy2(src_image, dest_image)
-                    try:
-                        src_image.unlink(missing_ok=True)
-                    except Exception:
-                        pass
-                except Exception as e:
-                    result["status"] = "warning"
-                    result["image_copy_error"] = str(e)
-                    dest_image = None
-
-            if dest_image and dest_image.exists():
-                editor_image_path = str(dest_image.resolve())
-                result["image_path"] = editor_image_path
-                result["editor_image_path"] = editor_image_path
-        else:
-            result["status"] = "warning"
-            result["image_copy_error"] = (
-                f"generated image not found: {original_image_path}"
-            )
-
-    # 7) before_data 밑에 JSON 저장
+    # 6) before_data 밑에 JSON 저장
     image_filename = result.get("image_filename") or ""
     if image_filename:
-        stem = Path(image_filename).stem  # streetlamp_banner → streetlamp_banner.json
+        stem = Path(image_filename).stem  # streetlamp_banner_... → streetlamp_banner_....json
         json_name = f"{stem}.json"
     else:
         json_name = "streetlamp_banner.json"
@@ -538,7 +466,6 @@ def run_streetlamp_banner_to_editor(
         _json.dump(result, f, ensure_ascii=False, indent=2)
 
     result["editor_json_path"] = str(json_path.resolve())
-
     return result
 
 
@@ -561,13 +488,13 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 3  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+    run_id = 4  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
     # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
-    poster_image_url = str(DATA_ROOT / "banner" / "andong.png")
-    festival_name_ko = "2024 안동국제 탈춤 페스티벌"
-    festival_period_ko = "2025.09.26 ~ 10.05"
-    festival_location_ko = "중앙선1942안동역, 원도심, 탈춤공원 일원"
+    poster_image_url = str(DATA_ROOT / "banner" / "busan.png")
+    festival_name_ko = "제12회 해운대 빛축제"
+    festival_period_ko = "2025.11.29 ~ 2026.01.18"
+    festival_location_ko = "해운대해수욕장 구남로 일원"
 
     # 2) 혹시라도 비어 있으면 바로 알려주기
     missing = []

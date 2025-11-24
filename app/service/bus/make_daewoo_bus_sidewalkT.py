@@ -2,7 +2,7 @@
 """
 app/service/bus/make_daewoo_bus_sidewalkT.py
 
-대우버스 인도면T(19:20) 외부 광고용 Seedream 입력/프롬프트 생성
+대우버스 인도면T(19:20) 외부 광고용 Seedream 입력/프롬포트 생성
 + 생성 이미지 저장 + 폰트/색상 추천 + editor 저장 모듈.
 
 역할
@@ -20,7 +20,7 @@ app/service/bus/make_daewoo_bus_sidewalkT.py
 - OPENAI_API_KEY                         : OpenAI API 키
 - BANNER_LLM_MODEL                       : (선택) 기본값 "gpt-4o-mini"
 - DAEWOO_BUS_SIDEWALKT_MODEL             : (선택) 기본값 "bytedance/seedream-4"
-- DAEWOO_BUS_SIDEWALKT_SAVE_DIR          : (선택)
+- DAEWOO_BUS_SIDEWALKT_SAVE_DIR          : (선택, create_* 단독 사용 시)
     * 절대경로면 그대로 사용
     * 상대경로면 acc-ai 프로젝트 루트 기준
     * 미설정 시 PROJECT_ROOT/app/data/daewoo_bus_sidewalkT 사용
@@ -142,12 +142,6 @@ def write_daewoo_bus_sidewalkT(
 ) -> Dict[str, Any]:
     """
     대우버스 인도면T(19:20, 1920x2021) Seedream 입력 JSON을 생성한다.
-
-    입력:
-        poster_image_url    : 참고용 포스터 이미지 URL 또는 로컬 파일 경로
-        festival_name_ko    : 축제명 (한글)
-        festival_period_ko  : 축제 기간 (한글 또는 숫자/영문)
-        festival_location_ko: 축제 장소 (한글 또는 영문)
     """
 
     # 1) 한글 축제 정보 → 영어 번역 (씬 묘사용)
@@ -163,19 +157,15 @@ def write_daewoo_bus_sidewalkT(
 
     # 2) 자리수 맞춘 플레이스홀더 + 원본 한글 텍스트 보존
     placeholders: Dict[str, str] = {
-        # 축제명: A부터 시작하는 시퀀스
         "festival_name_placeholder": _build_placeholder_from_hangul(
             festival_name_ko, "A"
         ),
-        # 축제기간: 숫자/기호는 그대로, 한글만 C부터 시작하는 시퀀스
         "festival_period_placeholder": _build_placeholder_from_hangul(
             festival_period_ko, "C"
         ),
-        # 축제장소: B부터 시작하는 시퀀스
         "festival_location_placeholder": _build_placeholder_from_hangul(
             festival_location_ko, "B"
         ),
-        # 원본 한글 텍스트도 그대로 같이 넣어줌 (폰트/색상 추천 등에서 활용 가능)
         "festival_base_name_placeholder": str(festival_name_ko or ""),
         "festival_base_period_placeholder": str(festival_period_ko or ""),
         "festival_base_location_placeholder": str(festival_location_ko or ""),
@@ -199,7 +189,6 @@ def write_daewoo_bus_sidewalkT(
     )
 
     # 5) Seedream / Replicate 입력 JSON 구성
-    #   - 19:20 비율: width=1920, height=2021
     seedream_input: Dict[str, Any] = {
         "size": "custom",
         "width": 1920,
@@ -233,6 +222,9 @@ def _get_daewoo_bus_sidewalkT_save_dir() -> Path:
       - 상대경로면 PROJECT_ROOT 기준으로 사용
     없으면:
       - PROJECT_ROOT/app/data/daewoo_bus_sidewalkT 사용
+
+    run_daewoo_bus_sidewalkT_to_editor(...) 에서는 이 경로를 사용하지 않고,
+    곧바로 editor/<run_id>/before_image 에 저장한다.
     """
     env_dir = os.getenv("DAEWOO_BUS_SIDEWALKT_SAVE_DIR")
     if env_dir:
@@ -247,7 +239,10 @@ def _get_daewoo_bus_sidewalkT_save_dir() -> Path:
 # 4) create_daewoo_bus_sidewalkT: Seedream JSON → Replicate 호출 → 이미지 저장
 #     + 플레이스홀더까지 같이 반환
 # -------------------------------------------------------------
-def create_daewoo_bus_sidewalkT(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
+def create_daewoo_bus_sidewalkT(
+    seedream_input: Dict[str, Any],
+    save_dir: Path | None = None,
+) -> Dict[str, Any]:
     """
     write_daewoo_bus_sidewalkT(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
     1) image_input 에서 포스터 URL/경로를 추출하고,
@@ -256,18 +251,8 @@ def create_daewoo_bus_sidewalkT(seedream_input: Dict[str, Any]) -> Dict[str, Any
        실제 19:20 비율의 대우버스 인도면T 이미지를 생성하고,
     4) 생성된 이미지를 로컬에 저장한다.
 
-    반환:
-        {
-          "size", "width", "height",
-          "image_path", "image_filename",
-          "prompt",
-          "festival_name_placeholder",
-          "festival_period_placeholder",
-          "festival_location_placeholder",
-          "festival_base_name_placeholder",
-          "festival_base_period_placeholder",
-          "festival_base_location_placeholder",
-        }
+    save_dir 가 주어지면 해당 디렉터리에 바로 저장하고,
+    None 이면 DAEWOO_BUS_SIDEWALKT_SAVE_DIR / daewoo_bus_sidewalkT 기본 경로를 사용한다.
     """
 
     # 입력 JSON에서 플레이스홀더 + 원본 한글 그대로 꺼냄
@@ -362,8 +347,13 @@ def create_daewoo_bus_sidewalkT(seedream_input: Dict[str, Any]) -> Dict[str, Any
 
     file_output = output[0]
 
-    # 기본 저장 위치: PROJECT_ROOT/app/data/daewoo_bus_sidewalkT
-    save_base = _get_daewoo_bus_sidewalkT_save_dir()
+    # 저장 위치 결정
+    if save_dir is not None:
+        save_base = Path(save_dir)
+    else:
+        save_base = _get_daewoo_bus_sidewalkT_save_dir()
+    save_base.mkdir(parents=True, exist_ok=True)
+
     image_path, image_filename = _save_image_from_file_output(
         file_output, save_base, prefix="daewoo_bus_sidewalkT_"
     )
@@ -405,10 +395,12 @@ def run_daewoo_bus_sidewalkT_to_editor(
 
     동작:
       1) write_daewoo_bus_sidewalkT(...) 로 seedream_input 생성
-      2) create_daewoo_bus_sidewalkT(...) 로 실제 배너 이미지 생성
-      3) recommend_fonts_and_colors_for_bus(...) 로 폰트/색상 추천
-      4) 결과 JSON + 이미지 사본을
-         app/data/editor/<run_id>/before_data, before_image 아래에 저장
+      2) editor/<run_id>/before_data, before_image 디렉터리 생성
+      3) create_daewoo_bus_sidewalkT(..., save_dir=before_image_dir) 로
+         실제 배너 이미지를 생성하고, 곧바로
+         app/data/editor/<run_id>/before_image 에 저장
+      4) recommend_fonts_and_colors_for_bus(...) 로 폰트/색상 추천
+      5) 결과 JSON 을 app/data/editor/<run_id>/before_data 아래에 저장
 
     반환:
         editor에 저장된 경로까지 포함한 결과 dict
@@ -422,10 +414,20 @@ def run_daewoo_bus_sidewalkT_to_editor(
         festival_location_ko=festival_location_ko,
     )
 
-    # 2) 실제 배너 이미지 생성
-    create_result = create_daewoo_bus_sidewalkT(seedream_input)
+    # 2) editor 디렉터리 준비  ✅ app/data/editor/<run_id>/...
+    editor_root = DATA_ROOT / "editor" / str(run_id)
+    before_data_dir = editor_root / "before_data"
+    before_image_dir = editor_root / "before_image"
+    before_data_dir.mkdir(parents=True, exist_ok=True)
+    before_image_dir.mkdir(parents=True, exist_ok=True)
 
-    # 3) 폰트/색상 추천 (bus_type 으로 daewoo_bus_sidewalkT 전달)
+    # 3) 실제 배너 이미지 생성 (바로 before_image 에 저장)
+    create_result = create_daewoo_bus_sidewalkT(
+        seedream_input,
+        save_dir=before_image_dir,
+    )
+
+    # 4) 폰트/색상 추천 (bus_type 으로 daewoo_bus_sidewalkT 전달)
     font_color_result = recommend_fonts_and_colors_for_bus(
         bus_type="daewoo_bus_sidewalkT",
         image_path=create_result["image_path"],
@@ -443,12 +445,7 @@ def run_daewoo_bus_sidewalkT_to_editor(
         ],
     )
 
-    # 4) editor 디렉터리 준비  ✅ app/data/editor/<run_id>/...
-    editor_root = DATA_ROOT / "editor" / str(run_id)
-    before_data_dir = editor_root / "before_data"
-    before_image_dir = editor_root / "before_image"
-    before_data_dir.mkdir(parents=True, exist_ok=True)
-    before_image_dir.mkdir(parents=True, exist_ok=True)
+    original_image_path = create_result.get("image_path") or ""
 
     # 5) 결과 dict 구성
     result: Dict[str, Any] = {
@@ -461,49 +458,20 @@ def run_daewoo_bus_sidewalkT_to_editor(
         "festival_location_ko": festival_location_ko,
         **create_result,
         **font_color_result,
+        "generated_image_path": original_image_path,
     }
 
-    original_image_path = create_result.get("image_path") or ""
-    result["generated_image_path"] = original_image_path
-
-    # 6) 이미지 파일을 before_image 밑으로 "이동" (원본은 삭제)
-    editor_image_path: str | None = None
     if original_image_path:
-        src_image = Path(original_image_path)
-        if src_image.exists():
-            dest_image = before_image_dir / src_image.name
-            try:
-                # 1순위: daewoo_bus_sidewalkT → editor/before_image 로 이동
-                src_image.replace(dest_image)
-            except Exception:
-                import shutil
+        result["image_path"] = original_image_path
+        result["editor_image_path"] = original_image_path
+    else:
+        result["status"] = "warning"
+        result["image_copy_error"] = "generated image path is empty"
 
-                try:
-                    shutil.copy2(src_image, dest_image)
-                    try:
-                        src_image.unlink(missing_ok=True)
-                    except Exception:
-                        # 삭제 실패해도 치명적이지 않으니 무시
-                        pass
-                except Exception as e:
-                    result["status"] = "warning"
-                    result["image_copy_error"] = str(e)
-                    dest_image = None
-
-            if dest_image and dest_image.exists():
-                editor_image_path = str(dest_image.resolve())
-                result["image_path"] = editor_image_path
-                result["editor_image_path"] = editor_image_path
-        else:
-            result["status"] = "warning"
-            result["image_copy_error"] = (
-                f"generated image not found: {original_image_path}"
-            )
-
-    # 7) before_data 밑에 JSON 저장
+    # 6) before_data 밑에 JSON 저장
     image_filename = result.get("image_filename") or ""
     if image_filename:
-        stem = Path(image_filename).stem  # daewoo_bus_sidewalkT → daewoo_bus_sidewalkT.json
+        stem = Path(image_filename).stem  # daewoo_bus_sidewalkT_... → daewoo_bus_sidewalkT_....json
         json_name = f"{stem}.json"
     else:
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -547,13 +515,13 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 3  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+    run_id = 4  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
     # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
-    poster_image_url = str(DATA_ROOT / "banner" / "andong.png")
-    festival_name_ko = "2024 안동국제 탈춤 페스티벌"
-    festival_period_ko = "2025.09.26 ~ 10.05"
-    festival_location_ko = "중앙선1942안동역, 원도심, 탈춤공원 일원"
+    poster_image_url = str(DATA_ROOT / "banner" / "busan.png")
+    festival_name_ko = "제12회 해운대 빛축제"
+    festival_period_ko = "2025.11.29 ~ 2026.01.18"
+    festival_location_ko = "해운대해수욕장 구남로 일원"
 
     # 2) 혹시라도 비어 있으면 바로 알려주기
     missing: list[str] = []

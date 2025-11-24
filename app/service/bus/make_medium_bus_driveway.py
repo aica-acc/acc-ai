@@ -20,7 +20,7 @@ app/service/bus/make_medium_bus_driveway.py
 - OPENAI_API_KEY                   : OpenAI API 키
 - BANNER_LLM_MODEL                 : (선택) 기본값 "gpt-4o-mini"
 - MEDIUM_BUS_DRIVEWAY_MODEL        : (선택) 기본값 "bytedance/seedream-4"
-- MEDIUM_BUS_DRIVEWAY_SAVE_DIR     : (선택)
+- MEDIUM_BUS_DRIVEWAY_SAVE_DIR     : (선택, create_* 단독 사용 시)
     * 절대경로면 그대로 사용
     * 상대경로면 acc-ai 프로젝트 루트 기준
     * 미설정 시 PROJECT_ROOT/app/data/medium_bus_driveway 사용
@@ -122,32 +122,6 @@ def _build_medium_bus_driveway_prompt_en(
         "draw only clean floating letters directly over the background. "
         "The quotation marks in this prompt are for instruction only; do not draw quotation marks in the final image."
     )
-
-    # f"{base_scene_en}의 매우 넓은 수평 축제 일러스트레이션,"
-    # "중형 버스에 긴 측면 배너로 인쇄되도록 설계되었습니다,"
-    # "하지만 실제 버스, 차량 또는 장착 구조물을 그리면 안 됩니다."
-    # "장면과 함께 캔버스 가장자리 전체를 채우세요,"
-    # "위나 아래에 검은 막대, 프레임, 테두리 또는 편지함 영역이 없습니다."
-    # "첨부된 포스터 이미지는 밝은 색상, 조명 및 분위기에만 참고하세요,"
-    # f"하지만 {details_phrase_en}으로 완전히 새로운 장면을 만듭니다."
-
-    # 배너의 가로 중앙 근처에 세 줄의 텍스트를 배치하고, 모두 완벽하게 중앙에 정렬합니다
-    # f"가운데 줄에 \\"{name_text}\"를 매우 크고 굵은 산세리프 문자로 씁니다,"
-    # "전체 이미지에서 가장 큰 텍스트이며 매우 먼 거리에서도 명확하게 읽을 수 있습니다."
-    # f"제목 바로 위의 맨 위 줄에 \\"{period_text}\"를 작은 굵은 산세리프 문자로 씁니다,"
-    # "하지만 여전히 멀리서도 분명히 읽을 수 있습니다."
-    # f"아래쪽 줄에는 제목 바로 아래에 \\"{location_text}\\"라고 맨 위 줄보다 약간 작은 크기로 적습니다."
-
-    # "세 줄 모두 모든 배경 요소 위에 명확하게 가장 앞쪽 시각적 층에 그려야 합니다,"
-    # "장면에서 등장인물, 객체, 효과는 글자의 어떤 부분도 겹치거나 덮거나 자를 수 없습니다."
-    # "이 세 줄의 텍스트를 각각 한 번씩 정확하게 그리세요. 두 번째 복사본, 그림자 복사본, 반사를 그리지 마세요,"
-    # "이미지의 다른 부분에 있는 이 텍스트의 mirrored 사본, 개요 전용 사본, 흐릿한 사본 또는 부분 사본"
-    # 지상, 하늘, 물, 건물, 장식 또는 인터페이스 요소를 포함하여
-    # "다른 텍스트는 전혀 추가하지 마세요: 단어, 라벨, 날짜, 숫자, 로고, 워터마크, UI 요소는 추가하지 마세요."
-    # "또는 화면 비율 레이블이나 'Ultrawide', 'BusBanner' 또는 모델 이름과 같은 모서리의 작은 텍스트."
-    # "글을 배너, 간판, 패널, 상자, 프레임, 리본 또는 물리적 보드에 배치하지 마십시오;"
-    # 배경 바로 위에 깨끗한 떠다니는 글자만 그립니다
-    # "이 프롬프트의 따옴표는 지시용이므로 최종 이미지에 따옴표를 그리지 마세요."
 
     return prompt.strip()
 
@@ -254,6 +228,9 @@ def _get_medium_bus_driveway_save_dir() -> Path:
       - 상대경로면 PROJECT_ROOT 기준으로 사용
     없으면:
       - PROJECT_ROOT/app/data/medium_bus_driveway 사용
+
+    run_medium_bus_driveway_to_editor(...) 에서는 이 경로 대신
+    editor/<run_id>/before_image 를 save_dir 로 직접 넘긴다.
     """
     env_dir = os.getenv("MEDIUM_BUS_DRIVEWAY_SAVE_DIR")
     if env_dir:
@@ -268,7 +245,10 @@ def _get_medium_bus_driveway_save_dir() -> Path:
 # 4) create_medium_bus_driveway: Seedream JSON → Replicate 호출 → 이미지 저장
 #     + 플레이스홀더까지 같이 반환
 # -------------------------------------------------------------
-def create_medium_bus_driveway(seedream_input: Dict[str, Any]) -> Dict[str, Any]:
+def create_medium_bus_driveway(
+    seedream_input: Dict[str, Any],
+    save_dir: Path | None = None,
+) -> Dict[str, Any]:
     """
     write_medium_bus_driveway(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
     1) image_input 에서 포스터 URL/경로를 추출하고,
@@ -277,18 +257,8 @@ def create_medium_bus_driveway(seedream_input: Dict[str, Any]) -> Dict[str, Any]
        실제 3:1 중형버스 차도면 이미지를 생성하고,
     4) 생성된 이미지를 로컬에 저장한다.
 
-    반환:
-        {
-          "size", "width", "height",
-          "image_path", "image_filename",
-          "prompt",
-          "festival_name_placeholder",
-          "festival_period_placeholder",
-          "festival_location_placeholder",
-          "festival_base_name_placeholder",
-          "festival_base_period_placeholder",
-          "festival_base_location_placeholder",
-        }
+    save_dir 가 주어지면 해당 디렉터리에 바로 저장하고,
+    None 이면 MEDIUM_BUS_DRIVEWAY_SAVE_DIR / medium_bus_driveway 기본 경로를 사용한다.
     """
 
     # 입력 JSON에서 플레이스홀더 + 원본 한글 그대로 꺼냄
@@ -375,7 +345,7 @@ def create_medium_bus_driveway(seedream_input: Dict[str, Any]) -> Dict[str, Any]
     # 3번 모두 실패한 경우
     if output is None:
         raise RuntimeError(
-            f"Seedream model error during medium bus driveway banner generation after retries: {last_err}"""
+            f"Seedream model error during medium bus driveway banner generation after retries: {last_err}"
         )
 
     if not (isinstance(output, (list, tuple)) and output):
@@ -383,9 +353,14 @@ def create_medium_bus_driveway(seedream_input: Dict[str, Any]) -> Dict[str, Any]
 
     file_output = output[0]
 
-    # 기본 저장 위치: PROJECT_ROOT/app/data/medium_bus_driveway
-    # 파일명: medium_bus_driveway.png (타임스탬프 없이 고정)
-    save_base = _get_medium_bus_driveway_save_dir()
+    # 저장 위치 결정
+    if save_dir is not None:
+        save_base = Path(save_dir)
+    else:
+        save_base = _get_medium_bus_driveway_save_dir()
+    save_base.mkdir(parents=True, exist_ok=True)
+
+    # 파일명: medium_bus_driveway_...png (prefix 기반)
     image_path, image_filename = _save_image_from_file_output(
         file_output, save_base, prefix="medium_bus_driveway_"
     )
@@ -427,10 +402,12 @@ def run_medium_bus_driveway_to_editor(
 
     동작:
       1) write_medium_bus_driveway(...) 로 seedream_input 생성
-      2) create_medium_bus_driveway(...) 로 실제 배너 이미지 생성
-      3) recommend_fonts_and_colors_for_banner(...) 로 폰트/색상 추천
-      4) 결과 JSON + 이미지 사본을
-         app/data/editor/<run_id>/before_data, before_image 아래에 저장
+      2) editor/<run_id>/before_data, before_image 디렉터리 생성
+      3) create_medium_bus_driveway(..., save_dir=before_image_dir) 로
+         실제 배너 이미지를 생성하고, 곧바로
+         app/data/editor/<run_id>/before_image 에 저장
+      4) recommend_fonts_and_colors_for_bus(...) 로 폰트/색상 추천
+      5) 결과 JSON 을 app/data/editor/<run_id>/before_data 아래에 저장
 
     반환:
         editor에 저장된 경로까지 포함한 결과 dict
@@ -444,34 +421,38 @@ def run_medium_bus_driveway_to_editor(
         festival_location_ko=festival_location_ko,
     )
 
-    # 2) 실제 배너 이미지 생성
-    create_result = create_medium_bus_driveway(seedream_input)
-
-    # 3) 폰트/색상 추천
-    font_color_result = recommend_fonts_and_colors_for_bus(
-    bus_type="medium_bus_driveway",
-    image_path=create_result["image_path"],
-    festival_name_placeholder=create_result["festival_name_placeholder"],
-    festival_period_placeholder=create_result["festival_period_placeholder"],
-    festival_location_placeholder=create_result["festival_location_placeholder"],
-    festival_base_name_placeholder=create_result[
-        "festival_base_name_placeholder"
-    ],
-    festival_base_period_placeholder=create_result[
-        "festival_base_period_placeholder"
-    ],
-    festival_base_location_placeholder=create_result[
-        "festival_base_location_placeholder"
-    ],
-)
-
-
-    # 4) editor 디렉터리 준비  ✅ app/data/editor/<run_id>/...
+    # 2) editor 디렉터리 준비  ✅ app/data/editor/<run_id>/...
     editor_root = DATA_ROOT / "editor" / str(run_id)
     before_data_dir = editor_root / "before_data"
     before_image_dir = editor_root / "before_image"
     before_data_dir.mkdir(parents=True, exist_ok=True)
     before_image_dir.mkdir(parents=True, exist_ok=True)
+
+    # 3) 실제 배너 이미지 생성 (바로 before_image 에 저장)
+    create_result = create_medium_bus_driveway(
+        seedream_input,
+        save_dir=before_image_dir,
+    )
+
+    # 4) 폰트/색상 추천
+    font_color_result = recommend_fonts_and_colors_for_bus(
+        bus_type="medium_bus_driveway",
+        image_path=create_result["image_path"],
+        festival_name_placeholder=create_result["festival_name_placeholder"],
+        festival_period_placeholder=create_result["festival_period_placeholder"],
+        festival_location_placeholder=create_result["festival_location_placeholder"],
+        festival_base_name_placeholder=create_result[
+            "festival_base_name_placeholder"
+        ],
+        festival_base_period_placeholder=create_result[
+            "festival_base_period_placeholder"
+        ],
+        festival_base_location_placeholder=create_result[
+            "festival_base_location_placeholder"
+        ],
+    )
+
+    original_image_path = create_result.get("image_path") or ""
 
     # 5) 결과 dict 구성
     result: Dict[str, Any] = {
@@ -484,49 +465,20 @@ def run_medium_bus_driveway_to_editor(
         "festival_location_ko": festival_location_ko,
         **create_result,
         **font_color_result,
+        "generated_image_path": original_image_path,
     }
 
-    original_image_path = create_result.get("image_path") or ""
-    result["generated_image_path"] = original_image_path
-
-    # 6) 이미지 파일을 before_image 밑으로 "이동" (원본은 삭제)
-    editor_image_path: str | None = None
     if original_image_path:
-        src_image = Path(original_image_path)
-        if src_image.exists():
-            dest_image = before_image_dir / src_image.name
-            try:
-                # 1순위: medium_bus_driveway → editor/before_image 로 이동
-                src_image.replace(dest_image)
-            except Exception:
-                import shutil
+        result["image_path"] = original_image_path
+        result["editor_image_path"] = original_image_path
+    else:
+        result["status"] = "warning"
+        result["image_copy_error"] = "generated image path is empty"
 
-                try:
-                    shutil.copy2(src_image, dest_image)
-                    try:
-                        src_image.unlink(missing_ok=True)
-                    except Exception:
-                        # 삭제 실패해도 치명적이지 않으니 무시
-                        pass
-                except Exception as e:
-                    result["status"] = "warning"
-                    result["image_copy_error"] = str(e)
-                    dest_image = None
-
-            if dest_image and dest_image.exists():
-                editor_image_path = str(dest_image.resolve())
-                result["image_path"] = editor_image_path
-                result["editor_image_path"] = editor_image_path
-        else:
-            result["status"] = "warning"
-            result["image_copy_error"] = (
-                f"generated image not found: {original_image_path}"
-            )
-
-    # 7) before_data 밑에 JSON 저장
+    # 6) before_data 밑에 JSON 저장
     image_filename = result.get("image_filename") or ""
     if image_filename:
-        stem = Path(image_filename).stem  # medium_bus_driveway → medium_bus_driveway.json
+        stem = Path(image_filename).stem  # medium_bus_driveway_... → medium_bus_driveway_....json
         json_name = f"{stem}.json"
     else:
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -570,13 +522,13 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 3  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+    run_id = 4  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
     # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
-    poster_image_url = str(DATA_ROOT / "banner" / "andong.png")
-    festival_name_ko = "2024 안동국제 탈춤 페스티벌"
-    festival_period_ko = "2025.09.26 ~ 10.05"
-    festival_location_ko = "중앙선1942안동역, 원도심, 탈춤공원 일원"
+    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\busan.png"
+    festival_name_ko = "제12회 해운대 빛축제"
+    festival_period_ko = "2025.11.29 ~ 2026.01.18"
+    festival_location_ko = "해운대해수욕장 구남로 일원"
 
     # 2) 혹시라도 비어 있으면 바로 알려주기
     missing = []

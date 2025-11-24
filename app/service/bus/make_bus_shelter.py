@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-app/service/bus/make_hyundai_bus_sidewalkT.py
+app/service/bus/make_bus_shelter.py
 
-현대버스 인도면T(17:10) 외부 광고용 Seedream 입력/프롬프트 생성
+버스쉘터(1:1.8) 광고용 Seedream 입력/프롬프트 생성
 + 생성 이미지 저장 + 폰트/색상 추천 + editor 저장 모듈.
 
 역할
@@ -10,23 +10,23 @@ app/service/bus/make_hyundai_bus_sidewalkT.py
   1) OpenAI LLM으로 축제명/기간/장소를 영어로 번역하고
   2) 포스터 이미지를 시각적으로 분석해서 "축제 씬 묘사"를 영어로 만든 뒤
   3) 한글 자리수에 맞춘 플레이스홀더 텍스트(라틴 알파벳 시퀀스)를 사용해서
-     17:10 비율의 현대버스 인도면T 프롬프트를 조립한다. (write_hyundai_bus_sidewalkT)
-  4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 생성하고 저장한다. (create_hyundai_bus_sidewalkT)
+     1:1.8 비율의 버스쉘터 광고 프롬프트를 조립한다. (write_bus_shelter)
+  4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 생성하고 저장한다. (create_bus_shelter)
   5) 완성된 배너 이미지를 기반으로 폰트/색상 추천을 수행한다.
-  6) run_hyundai_bus_sidewalkT_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
-  7) python make_hyundai_bus_sidewalkT.py 로 단독 실행할 수 있다.
+  6) run_bus_shelter_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
+  7) python make_bus_shelter.py 로 단독 실행할 수 있다.
 
 전제 환경변수
-- OPENAI_API_KEY                         : OpenAI API 키
-- BANNER_LLM_MODEL                       : (선택) 기본값 "gpt-4o-mini"
-- HYUNDAI_BUS_SIDEWALKT_MODEL            : (선택) 기본값 "bytedance/seedream-4"
-- HYUNDAI_BUS_SIDEWALKT_SAVE_DIR         : (선택, create_* 단독 사용 시)
+- OPENAI_API_KEY              : OpenAI API 키
+- BANNER_LLM_MODEL            : (선택) 기본값 "gpt-4o-mini"
+- BUS_SHELTER_MODEL           : (선택) 기본값 "bytedance/seedream-4"
+- BUS_SHELTER_SAVE_DIR        : (선택, 직접 create_bus_shelter 를 쓸 때용)
     * 절대경로면 그대로 사용
     * 상대경로면 acc-ai 프로젝트 루트 기준
-    * 미설정 시 PROJECT_ROOT/app/data/hyundai_bus_sidewalkT 사용
+    * 미설정 시 PROJECT_ROOT/app/data/bus_shelter 사용
 
 CLI 실행:
-    python make_hyundai_bus_sidewalkT.py
+    python make_bus_shelter.py
 """
 
 from __future__ import annotations
@@ -70,16 +70,16 @@ from app.service.banner_khs.make_road_banner import (  # type: ignore
     _download_image_bytes,
 )
 
-# 폰트/색상 추천 모듈 (버스 전용)
+# 폰트/색상 추천 모듈 (버스/쉘터 전용)
 from app.service.font_color.bus_font_color_recommend import (  # type: ignore
     recommend_fonts_and_colors_for_bus,
 )
 
 
 # -------------------------------------------------------------
-# 1) 영어 씬 묘사 + 플레이스홀더 텍스트 → 현대버스 인도면T 프롬프트
+# 1) 영어 씬 묘사 + 플레이스홀더 텍스트 → 버스쉘터 프롬프트
 # -------------------------------------------------------------
-def _build_hyundai_bus_sidewalkT_prompt_en(
+def _build_bus_shelter_prompt_en(
     name_text: str,
     period_text: str,
     location_text: str,
@@ -87,8 +87,8 @@ def _build_hyundai_bus_sidewalkT_prompt_en(
     details_phrase_en: str,
 ) -> str:
     """
-    17:10 비율 현대버스 인도면T용 영어 프롬프트 생성.
-    현대 시내버스 인도측 T형 광고판에 맞는 템플릿 느낌으로 설계.
+    1:1.8 비율 세로형 버스쉘터 광고용 영어 프롬프트 생성.
+    버스 정류장 유리 패널에 붙는 세로 포스터 느낌으로 설계.
     """
 
     def _norm(s: str) -> str:
@@ -101,17 +101,17 @@ def _build_hyundai_bus_sidewalkT_prompt_en(
     location_text = _norm(location_text)
 
     prompt = (
-        f"Slightly wide rectangular festival illustration of {base_scene_en}, "
-        "designed as the main sidewalk-side T-shaped advertisement template for a modern Hyundai city bus, "
-        "but do not draw any actual bus, vehicle, or mounting structure. "
+        f"Tall vertical festival illustration of {base_scene_en}, "
+        "designed as the main poster artwork for a bus shelter advertising panel, "
+        "but do not draw any actual bus shelter, frame, glass, or mounting structure. "
         "Fill the entire canvas edge to edge with the scene, "
         "with no black bars, frames, borders, or letterbox areas at the top or bottom. "
         "Use the attached poster image only as reference for bright colors, lighting and atmosphere, "
         f"but create a completely new scene with {details_phrase_en}. "
 
-        "Place three lines of text near the visual center of the template, all perfectly center-aligned. "
+        "Place three lines of text around the central vertical area, all perfectly center-aligned horizontally. "
         f"On the middle line, write \"{name_text}\" in extremely large, ultra-bold sans-serif letters, "
-        "the largest text in the entire image and clearly readable from a very long distance. "
+        "the largest text in the entire image and clearly readable from a long distance across the street. "
         f"On the top line, directly above the title, write \"{period_text}\" in smaller bold sans-serif letters, "
         "but still clearly readable from far away. "
         f"On the bottom line, directly below the title, write \"{location_text}\" in a size slightly smaller than the top line. "
@@ -122,7 +122,7 @@ def _build_hyundai_bus_sidewalkT_prompt_en(
         "mirrored copy, outline-only copy, blurred copy, or partial copy of any of this text anywhere else in the image, "
         "including on the ground, sky, water, buildings, decorations, or interface elements. "
         "Do not add any other text at all: no extra words, labels, dates, numbers, logos, watermarks, UI elements, "
-        "or any small text in the corners, such as aspect ratio labels or the words 'Template', 'BusBanner', or model names. "
+        "or any small text in the corners, such as aspect ratio labels or the words 'Poster', 'BusShelter', or model names. "
         "Do not place the text on any banner, signboard, panel, box, frame, ribbon, or physical board; "
         "draw only clean floating letters directly over the background. "
         "The quotation marks in this prompt are for instruction only; do not draw quotation marks in the final image."
@@ -132,22 +132,16 @@ def _build_hyundai_bus_sidewalkT_prompt_en(
 
 
 # -------------------------------------------------------------
-# 2) write_hyundai_bus_sidewalkT: Seedream 입력 JSON 생성 (+ 플레이스홀더 포함)
+# 2) write_bus_shelter: Seedream 입력 JSON 생성 (+ 플레이스홀더 포함)
 # -------------------------------------------------------------
-def write_hyundai_bus_sidewalkT(
+def write_bus_shelter(
     poster_image_url: str,
     festival_name_ko: str,
     festival_period_ko: str,
     festival_location_ko: str,
 ) -> Dict[str, Any]:
     """
-    현대버스 인도면T(17:10, 3400x2000) Seedream 입력 JSON을 생성한다.
-
-    입력:
-        poster_image_url    : 참고용 포스터 이미지 URL 또는 로컬 파일 경로
-        festival_name_ko    : 축제명 (한글)
-        festival_period_ko  : 축제 기간 (한글 또는 숫자/영문)
-        festival_location_ko: 축제 장소 (한글 또는 영문)
+    버스쉘터 광고(1:1.8, 2048x3811) Seedream 입력 JSON을 생성한다.
     """
 
     # 1) 한글 축제 정보 → 영어 번역 (씬 묘사용)
@@ -163,19 +157,15 @@ def write_hyundai_bus_sidewalkT(
 
     # 2) 자리수 맞춘 플레이스홀더 + 원본 한글 텍스트 보존
     placeholders: Dict[str, str] = {
-        # 축제명: A부터 시작하는 시퀀스
         "festival_name_placeholder": _build_placeholder_from_hangul(
             festival_name_ko, "A"
         ),
-        # 축제기간: 숫자/기호는 그대로, 한글만 C부터 시작하는 시퀀스
         "festival_period_placeholder": _build_placeholder_from_hangul(
             festival_period_ko, "C"
         ),
-        # 축제장소: B부터 시작하는 시퀀스
         "festival_location_placeholder": _build_placeholder_from_hangul(
             festival_location_ko, "B"
         ),
-        # 원본 한글 텍스트도 그대로 같이 넣어줌 (폰트/색상 추천 등에서 활용 가능)
         "festival_base_name_placeholder": str(festival_name_ko or ""),
         "festival_base_period_placeholder": str(festival_period_ko or ""),
         "festival_base_location_placeholder": str(festival_location_ko or ""),
@@ -189,8 +179,8 @@ def write_hyundai_bus_sidewalkT(
         festival_location_en=location_en,
     )
 
-    # 4) 최종 프롬프트 조립 (17:10 현대버스 인도면T)
-    prompt = _build_hyundai_bus_sidewalkT_prompt_en(
+    # 4) 최종 프롬프트 조립 (버스쉘터 세로 포스터)
+    prompt = _build_bus_shelter_prompt_en(
         name_text=placeholders["festival_name_placeholder"],
         period_text=placeholders["festival_period_placeholder"] or period_en,
         location_text=placeholders["festival_location_placeholder"],
@@ -199,11 +189,10 @@ def write_hyundai_bus_sidewalkT(
     )
 
     # 5) Seedream / Replicate 입력 JSON 구성
-    #   - 17:10 비율: width=3400, height=2000
     seedream_input: Dict[str, Any] = {
         "size": "custom",
-        "width": 3400,
-        "height": 2000,
+        "width": 2048,
+        "height": 3811,
         "prompt": prompt,
         "max_images": 1,
         "aspect_ratio": "match_input_image",
@@ -217,53 +206,51 @@ def write_hyundai_bus_sidewalkT(
         ],
     }
 
-    # 플레이스홀더 + 원본 한글도 같이 포함
     seedream_input.update(placeholders)
-
     return seedream_input
 
 
 # -------------------------------------------------------------
-# 3) 현대버스 인도면T 저장 디렉터리 결정
+# 3) 버스쉘터 저장 디렉터리 결정
 # -------------------------------------------------------------
-def _get_hyundai_bus_sidewalkT_save_dir() -> Path:
+def _get_bus_shelter_save_dir() -> Path:
     """
-    HYUNDAI_BUS_SIDEWALKT_SAVE_DIR 환경변수가 있으면:
+    BUS_SHELTER_SAVE_DIR 환경변수가 있으면:
       - 절대경로면 그대로 사용
       - 상대경로면 PROJECT_ROOT 기준으로 사용
     없으면:
-      - PROJECT_ROOT/app/data/hyundai_bus_sidewalkT 사용
+      - PROJECT_ROOT/app/data/bus_shelter 사용
 
-    run_hyundai_bus_sidewalkT_to_editor(...) 에서는 이 경로 대신
-    editor/<run_id>/before_image 를 save_dir 로 직접 넘긴다.
+    run_bus_shelter_to_editor(...) 에서는 이 경로를 사용하지 않고,
+    곧바로 editor/<run_id>/before_image 에 저장한다.
     """
-    env_dir = os.getenv("HYUNDAI_BUS_SIDEWALKT_SAVE_DIR")
+    env_dir = os.getenv("BUS_SHELTER_SAVE_DIR")
     if env_dir:
         p = Path(env_dir)
         if not p.is_absolute():
             p = PROJECT_ROOT / p
         return p
-    return DATA_ROOT / "hyundai_bus_sidewalkT"
+    return DATA_ROOT / "bus_shelter"
 
 
 # -------------------------------------------------------------
-# 4) create_hyundai_bus_sidewalkT: Seedream JSON → Replicate 호출 → 이미지 저장
+# 4) create_bus_shelter: Seedream JSON → Replicate 호출 → 이미지 저장
 #     + 플레이스홀더까지 같이 반환
 # -------------------------------------------------------------
-def create_hyundai_bus_sidewalkT(
+def create_bus_shelter(
     seedream_input: Dict[str, Any],
     save_dir: Path | None = None,
 ) -> Dict[str, Any]:
     """
-    write_hyundai_bus_sidewalkT(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
+    write_bus_shelter(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
     1) image_input 에서 포스터 URL/경로를 추출하고,
     2) 그 이미지를 다운로드(또는 로컬 파일 읽기)해 파일 객체로 만든 뒤,
     3) Replicate(bytedance/seedream-4)에 prompt + image_input과 함께 전달해
-       실제 17:10 비율의 현대버스 인도면T 이미지를 생성하고,
+       실제 1:1.8 비율의 버스쉘터 세로 포스터 이미지를 생성하고,
     4) 생성된 이미지를 로컬에 저장한다.
 
     save_dir 가 주어지면 해당 디렉터리에 바로 저장하고,
-    None 이면 HYUNDAI_BUS_SIDEWALKT_SAVE_DIR / hyundai_bus_sidewalkT 기본 경로를 사용한다.
+    None 이면 BUS_SHELTER_SAVE_DIR / bus_shelter 기본 경로를 사용한다.
     """
 
     # 입력 JSON에서 플레이스홀더 + 원본 한글 그대로 꺼냄
@@ -299,8 +286,8 @@ def create_hyundai_bus_sidewalkT(
     # 3) Replicate에 넘길 input 구성
     prompt = seedream_input.get("prompt", "")
     size = seedream_input.get("size", "custom")
-    width = int(seedream_input.get("width", 3400))
-    height = int(seedream_input.get("height", 2000))
+    width = int(seedream_input.get("width", 2048))
+    height = int(seedream_input.get("height", 3811))
     max_images = int(seedream_input.get("max_images", 1))
     aspect_ratio = seedream_input.get("aspect_ratio", "match_input_image")
     enhance_prompt = bool(seedream_input.get("enhance_prompt", True))
@@ -320,7 +307,7 @@ def create_hyundai_bus_sidewalkT(
         "sequential_image_generation": sequential_image_generation,
     }
 
-    model_name = os.getenv("HYUNDAI_BUS_SIDEWALKT_MODEL", "bytedance/seedream-4")
+    model_name = os.getenv("BUS_SHELTER_MODEL", "bytedance/seedream-4")
 
     # Seedream / Replicate 일시 오류(PA 등)에 대비한 재시도 로직
     output = None
@@ -339,18 +326,18 @@ def create_hyundai_bus_sidewalkT(
                 continue
             # 그 외 ModelError는 그대로 넘김
             raise RuntimeError(
-                f"Seedream model error during hyundai_bus_sidewalkT banner generation: {e}"
+                f"Seedream model error during bus_shelter banner generation: {e}"
             )
         except Exception as e:
             # 네트워크 등 다른 예외는 바로 실패
             raise RuntimeError(
-                f"Unexpected error during hyundai_bus_sidewalkT banner generation: {e}"
+                f"Unexpected error during bus_shelter banner generation: {e}"
             )
 
     # 3번 모두 실패한 경우
     if output is None:
         raise RuntimeError(
-            f"Seedream model error during hyundai_bus_sidewalkT banner generation after retries: {last_err}"
+            f"Seedream model error during bus_shelter banner generation after retries: {last_err}"
         )
 
     if not (isinstance(output, (list, tuple)) and output):
@@ -362,11 +349,11 @@ def create_hyundai_bus_sidewalkT(
     if save_dir is not None:
         save_base = Path(save_dir)
     else:
-        save_base = _get_hyundai_bus_sidewalkT_save_dir()
+        save_base = _get_bus_shelter_save_dir()
     save_base.mkdir(parents=True, exist_ok=True)
 
     image_path, image_filename = _save_image_from_file_output(
-        file_output, save_base, prefix="hyundai_bus_sidewalkT_"
+        file_output, save_base, prefix="bus_shelter_"
     )
 
     # 플레이스홀더 + 원본 한글까지 같이 반환 + size/width/height 포함
@@ -389,7 +376,7 @@ def create_hyundai_bus_sidewalkT(
 # -------------------------------------------------------------
 # 5) editor 저장용 헬퍼 (run_id 기준)
 # -------------------------------------------------------------
-def run_hyundai_bus_sidewalkT_to_editor(
+def run_bus_shelter_to_editor(
     run_id: int,
     poster_image_url: str,
     festival_name_ko: str,
@@ -405,9 +392,9 @@ def run_hyundai_bus_sidewalkT_to_editor(
         festival_location_ko
 
     동작:
-      1) write_hyundai_bus_sidewalkT(...) 로 seedream_input 생성
+      1) write_bus_shelter(...) 로 seedream_input 생성
       2) editor/<run_id>/before_data, before_image 디렉터리 생성
-      3) create_hyundai_bus_sidewalkT(..., save_dir=before_image_dir) 로
+      3) create_bus_shelter(..., save_dir=before_image_dir) 로
          실제 배너 이미지를 생성하고, 곧바로
          app/data/editor/<run_id>/before_image 에 저장
       4) recommend_fonts_and_colors_for_bus(...) 로 폰트/색상 추천
@@ -418,7 +405,7 @@ def run_hyundai_bus_sidewalkT_to_editor(
     """
 
     # 1) Seedream 입력 생성
-    seedream_input = write_hyundai_bus_sidewalkT(
+    seedream_input = write_bus_shelter(
         poster_image_url=poster_image_url,
         festival_name_ko=festival_name_ko,
         festival_period_ko=festival_period_ko,
@@ -433,14 +420,14 @@ def run_hyundai_bus_sidewalkT_to_editor(
     before_image_dir.mkdir(parents=True, exist_ok=True)
 
     # 3) 실제 배너 이미지 생성 (바로 before_image 에 저장)
-    create_result = create_hyundai_bus_sidewalkT(
+    create_result = create_bus_shelter(
         seedream_input,
         save_dir=before_image_dir,
     )
 
-    # 4) 폰트/색상 추천 (bus_type 으로 hyundai_bus_sidewalkT 전달)
+    # 4) 폰트/색상 추천 (bus_type 으로 bus_shelter 전달)
     font_color_result = recommend_fonts_and_colors_for_bus(
-        bus_type="hyundai_bus_sidewalkT",
+        bus_type="bus_shelter",
         image_path=create_result["image_path"],
         festival_name_placeholder=create_result["festival_name_placeholder"],
         festival_period_placeholder=create_result["festival_period_placeholder"],
@@ -462,7 +449,7 @@ def run_hyundai_bus_sidewalkT_to_editor(
     result: Dict[str, Any] = {
         "run_id": int(run_id),
         "status": "success",
-        "type": "hyundai_bus_sidewalkT",
+        "type": "bus_shelter",
         "poster_image_url": poster_image_url,
         "festival_name_ko": festival_name_ko,
         "festival_period_ko": festival_period_ko,
@@ -482,11 +469,11 @@ def run_hyundai_bus_sidewalkT_to_editor(
     # 6) before_data 밑에 JSON 저장
     image_filename = result.get("image_filename") or ""
     if image_filename:
-        stem = Path(image_filename).stem  # hyundai_bus_sidewalkT_... → hyundai_bus_sidewalkT_....json
+        stem = Path(image_filename).stem  # bus_shelter_... → bus_shelter_....json
         json_name = f"{stem}.json"
     else:
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        json_name = f"hyundai_bus_sidewalkT_{ts}.json"
+        json_name = f"bus_shelter_{ts}.json"
 
     json_path = before_data_dir / json_name
     with json_path.open("w", encoding="utf-8") as f:
@@ -515,10 +502,10 @@ def main() -> None:
     CLI 실행용 진입점.
 
     ✅ 콘솔에서:
-        python make_hyundai_bus_sidewalkT.py
+        python make_bus_shelter.py
 
     를 실행하면, 아래에 적어둔 입력값으로
-    - 현대버스 인도면T Seedream 입력 생성
+    - 버스쉘터 Seedream 입력 생성
     - Seedream 호출로 실제 이미지 생성
     - 폰트/색상 추천
     - app/data/editor/<run_id>/before_data, before_image 저장
@@ -529,13 +516,13 @@ def main() -> None:
     run_id = 4  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
     # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\busan.png"
+    poster_image_url = str(DATA_ROOT / "banner" / "busan.png")
     festival_name_ko = "제12회 해운대 빛축제"
     festival_period_ko = "2025.11.29 ~ 2026.01.18"
     festival_location_ko = "해운대해수욕장 구남로 일원"
 
     # 2) 혹시라도 비어 있으면 바로 알려주기
-    missing = []
+    missing: list[str] = []
     if not poster_image_url:
         missing.append("poster_image_url")
     if not festival_name_ko:
@@ -552,7 +539,7 @@ def main() -> None:
         return
 
     # 3) 실제 실행
-    result = run_hyundai_bus_sidewalkT_to_editor(
+    result = run_bus_shelter_to_editor(
         run_id=run_id,
         poster_image_url=poster_image_url,
         festival_name_ko=festival_name_ko,
@@ -560,7 +547,7 @@ def main() -> None:
         festival_location_ko=festival_location_ko,
     )
 
-    print("✅ hyundai_bus_sidewalkT 배너 생성 + 폰트/색상 추천 + editor 저장 완료")
+    print("✅ bus_shelter 배너 생성 + 폰트/색상 추천 + editor 저장 완료")
     print("  run_id            :", result.get("run_id"))
     print("  type              :", result.get("type"))
     print("  editor_json_path  :", result.get("editor_json_path"))
