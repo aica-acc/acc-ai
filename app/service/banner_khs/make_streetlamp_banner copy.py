@@ -2,7 +2,7 @@
 """
 app/service/banner_khs/make_streetlamp_banner.py
 
-가로등(1:3) 세로 현수막용 Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + 색상 추천 + editor 저장 모듈.
+가로등(1:3) 세로 현수막용 Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + editor 저장 모듈.
 
 역할
 - 참고용 포스터 이미지(URL 또는 로컬 파일 경로)와 축제 정보(한글)를 입력받아서
@@ -11,9 +11,8 @@ app/service/banner_khs/make_streetlamp_banner.py
   3) 한글 자리수에 맞춘 플레이스홀더 텍스트(라틴 알파벳 시퀀스)를 사용해서
      1:3 세로 가로등 현수막 프롬프트를 조립한다. (write_streetlamp_banner)
   4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 생성하고 저장한다. (create_streetlamp_banner)
-  5) 완성된 배너 이미지를 기반으로 텍스트 색상 추천을 수행한다.
-  6) run_streetlamp_banner_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
-  7) python make_streetlamp_banner.py 로 단독 실행할 수 있다.
+  5) run_streetlamp_banner_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
+  6) python make_streetlamp_banner.py 로 단독 실행할 수 있다.
 
 전제 환경변수
 - OPENAI_API_KEY               : OpenAI API 키
@@ -27,7 +26,6 @@ app/service/banner_khs/make_streetlamp_banner.py
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 import time
@@ -44,12 +42,6 @@ from replicate.exceptions import ModelError
 # -------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_ROOT = PROJECT_ROOT / "app" / "data"
-
-# 배너 고정 스펙
-BANNER_TYPE = "streetlamp_banner"
-BANNER_PRO_NAME = "가로등 현수막"
-BANNER_WIDTH = 1024
-BANNER_HEIGHT = 3072
 
 # .env 로딩 (예: C:\final_project\ACC\acc-ai\.env)
 env_path = PROJECT_ROOT / ".env"
@@ -71,9 +63,9 @@ from app.service.banner_khs.make_road_banner import (  # type: ignore
     _download_image_bytes,
 )
 
-# 공용 텍스트 색상 추천 유틸
-from app.service.font_color.image_text_color_recommend import (  # type: ignore
-    recommend_text_colors_for_image,
+# 폰트/색상 추천 모듈 (road-banner와 동일한 모듈 사용)
+from app.service.font_color.banner_font_color_recommend import (  # type: ignore
+    recommend_fonts_and_colors_for_banner,
 )
 
 
@@ -104,16 +96,14 @@ def _build_streetlamp_banner_prompt_en(
         "not shown hanging on any streetlamp, pole, wire, wall, or building, and with no surrounding street or environment. "
         "Leave small safe margins at the very top and bottom so that no important text is cut off when the banner is printed or trimmed. "
 
-        # 👉 텍스트 위치/간격: 상단 중앙 + 서로 가깝게
-        "Place exactly three horizontal lines of text in the upper central area of the banner, "
-        "all perfectly center-aligned just above the vertical middle of the canvas, not near the very top edge. "
-        "Keep these three lines visually close to one another as a single compact text block, "
-        "with only small and even vertical gaps between the top, middle, and bottom lines, "
-        "so that the period, title, and location feel tightly grouped as one unit. "
+        "In the upper central area of the banner, place exactly three horizontal lines of text, all perfectly center-aligned. "
+        "Arrange them so that the middle title line has generous vertical spacing above and below it, "
+        "clearly separated from the other two lines, while the top and bottom lines stay relatively close together as a compact pair, "
+        "so that the period and location do not feel far apart from each other. "
 
         f"On the middle line, write \"{name_text}\" in extremely large, ultra-bold sans-serif letters, "
         "the largest text in the entire image and clearly readable from a very long distance. "
-        "Make this title block so large that it visually dominates the compact text group, "
+        "Make this title block so large that it visually dominates the upper central area of the banner, "
         "and it must never look like a small caption or subtitle. "
         f"On the top line, above the title, write \"{period_text}\" in smaller bold sans-serif letters, "
         "but still keep these letters big, bright, and clearly readable from far away, not tiny caption text. "
@@ -195,8 +185,8 @@ def write_streetlamp_banner(
     # 5) Seedream / Replicate 입력 JSON 구성
     seedream_input: Dict[str, Any] = {
         "size": "custom",
-        "width": BANNER_WIDTH,
-        "height": BANNER_HEIGHT,
+        "width": 1024,
+        "height": 3072,
         "prompt": prompt,
         "max_images": 1,
         "aspect_ratio": "match_input_image",
@@ -288,8 +278,8 @@ def create_streetlamp_banner(
     # 3) Replicate에 넘길 input 구성
     prompt = seedream_input.get("prompt", "")
     size = seedream_input.get("size", "custom")
-    width = int(seedream_input.get("width", BANNER_WIDTH))
-    height = int(seedream_input.get("height", BANNER_HEIGHT))
+    width = int(seedream_input.get("width", 1024))
+    height = int(seedream_input.get("height", 3072))
     max_images = int(seedream_input.get("max_images", 1))
     aspect_ratio = seedream_input.get("aspect_ratio", "match_input_image")
     enhance_prompt = bool(seedream_input.get("enhance_prompt", True))
@@ -390,30 +380,15 @@ def run_streetlamp_banner_to_editor(
         festival_location_ko
 
     동작:
-      1) write_streetlamp_banner(...) 로 Seedream 입력용 seedream_input 생성
+      1) write_streetlamp_banner(...) 로 seedream_input 생성
       2) create_streetlamp_banner(..., save_dir=before_image_dir) 로
-         실제 세로 가로등 배너 이미지를 생성하고,
-         app/data/editor/<run_id>/before_image/streetlamp_banner.png 로 저장한다.
-      3) 공용 색상 추천 유틸(recommend_text_colors_for_image)을 사용해
-         생성된 배너 이미지 위에 올릴 텍스트 색상 3개
-         (제목/기간/장소용)을 추천받는다.
-      4) 배너 타입, 한글 축제 정보, 배너 크기, 추천된 텍스트 색상만을 포함한
-         최소 결과 JSON을 구성하여
-         app/data/editor/<run_id>/before_data/streetlamp_banner.json 에 저장한다.
+         실제 배너 이미지를 생성하고, 곧바로
+         app/data/editor/<run_id>/before_image 에 저장
+      3) recommend_fonts_and_colors_for_banner(...) 로 폰트/색상 추천
+      4) 결과 JSON 을 app/data/editor/<run_id>/before_data 아래에 저장
 
     반환:
-      {
-        "type": "streetlamp_banner",
-        "pro_name": "가로등 현수막",
-        "festival_name_ko": ...,
-        "festival_period_ko": ...,
-        "festival_location_ko": ...,
-        "width": 1024,
-        "height": 3072,
-        "festival_color_name_placeholder": "#RRGGBB",
-        "festival_color_period_placeholder": "#RRGGBB",
-        "festival_color_location_placeholder": "#RRGGBB"
-      }
+        editor에 저장된 경로까지 포함한 결과 dict
     """
 
     # 1) Seedream 입력 생성
@@ -437,33 +412,60 @@ def run_streetlamp_banner_to_editor(
         save_dir=before_image_dir,
     )
 
-    # 4) 색상 추천 (공용 유틸 사용)
-    colors = recommend_text_colors_for_image(
+    # 4) 폰트/색상 추천
+    font_color_result = recommend_fonts_and_colors_for_banner(
+        banner_type="streetlamp_banner",
         image_path=create_result["image_path"],
-        slots=3,
+        festival_name_placeholder=create_result["festival_name_placeholder"],
+        festival_period_placeholder=create_result["festival_period_placeholder"],
+        festival_location_placeholder=create_result["festival_location_placeholder"],
+        festival_base_name_placeholder=create_result["festival_base_name_placeholder"],
+        festival_base_period_placeholder=create_result[
+            "festival_base_period_placeholder"
+        ],
+        festival_base_location_placeholder=create_result[
+            "festival_base_location_placeholder"
+        ],
     )
-    # slots=3 보장 가정
-    color_name, color_period, color_location = colors[0], colors[1], colors[2]
 
-    # 5) 최종 결과 JSON (API/백엔드에서 사용할 최소 정보 형태)
+    # 5) 결과 dict 구성
+    original_image_path = create_result.get("image_path") or ""
+
     result: Dict[str, Any] = {
-        "type": BANNER_TYPE,
-        "pro_name": BANNER_PRO_NAME,
+        "run_id": int(run_id),
+        "status": "success",
+        "type": "streetlamp_banner",
+        "poster_image_url": poster_image_url,
         "festival_name_ko": festival_name_ko,
         "festival_period_ko": festival_period_ko,
         "festival_location_ko": festival_location_ko,
-        "width": int(create_result.get("width", BANNER_WIDTH)),
-        "height": int(create_result.get("height", BANNER_HEIGHT)),
-        "festival_color_name_placeholder": color_name,
-        "festival_color_period_placeholder": color_period,
-        "festival_color_location_placeholder": color_location,
+        **create_result,
+        **font_color_result,
+        "generated_image_path": original_image_path,
     }
 
-    # 6) before_data 밑에 JSON 저장 (파일명 고정)
-    json_path = before_data_dir / "streetlamp_banner.json"
-    with json_path.open("w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
+    if original_image_path:
+        result["image_path"] = original_image_path
+        result["editor_image_path"] = original_image_path
+    else:
+        result["status"] = "warning"
+        result["image_copy_error"] = "generated image path is empty"
 
+    # 6) before_data 밑에 JSON 저장
+    image_filename = result.get("image_filename") or ""
+    if image_filename:
+        stem = Path(image_filename).stem  # streetlamp_banner_... → streetlamp_banner_....json
+        json_name = f"{stem}.json"
+    else:
+        json_name = "streetlamp_banner.json"
+
+    json_path = before_data_dir / json_name
+    import json as _json
+
+    with json_path.open("w", encoding="utf-8") as f:
+        _json.dump(result, f, ensure_ascii=False, indent=2)
+
+    result["editor_json_path"] = str(json_path.resolve())
     return result
 
 
@@ -480,16 +482,16 @@ def main() -> None:
     를 실행하면, 아래에 적어둔 입력값으로
     - 세로 가로등 배너 Seedream 입력 생성
     - Seedream 호출로 실제 이미지 생성
-    - 텍스트 색상 추천
+    - 폰트/색상 추천
     - app/data/editor/<run_id>/before_data, before_image 저장
     까지 한 번에 수행한다.
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 8  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+    run_id = 4  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
     # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\busan.png"
+    poster_image_url = str(DATA_ROOT / "banner" / "busan.png")
     festival_name_ko = "제12회 해운대 빛축제"
     festival_period_ko = "2025.11.29 ~ 2026.01.18"
     festival_location_ko = "해운대해수욕장 구남로 일원"
@@ -520,20 +522,18 @@ def main() -> None:
         festival_location_ko=festival_location_ko,
     )
 
-    editor_root = DATA_ROOT / "editor" / str(run_id)
-    json_path = editor_root / "before_data" / "streetlamp_banner.json"
-    image_path = editor_root / "before_image" / "streetlamp_banner.png"
-
-    print("✅ streetlamp banner 생성 + 색상 추천 + editor 저장 완료")
-    print("  run_id            :", run_id)
+    print("✅ streetlamp banner 생성 + 폰트/색상 추천 + editor 저장 완료")
+    print("  run_id            :", result.get("run_id"))
     print("  type              :", result.get("type"))
-    print("  pro_name          :", result.get("pro_name"))
-    print("  festival_name_ko  :", result.get("festival_name_ko"))
-    print("  festival_period_ko:", result.get("festival_period_ko"))
-    print("  festival_location_ko:", result.get("festival_location_ko"))
-    print("  width x height    :", result.get("width"), "x", result.get("height"))
-    print("  json_path         :", json_path)
-    print("  image_path        :", image_path)
+    print("  editor_json_path  :", result.get("editor_json_path"))
+    print(
+        "  editor_image_path :",
+        result.get("editor_image_path", result.get("image_path")),
+    )
+    print("  generated_image_path :", result.get("generated_image_path"))
+    print("  font_name         :", result.get("festival_font_name_placeholder"))
+    print("  font_period       :", result.get("festival_font_period_placeholder"))
+    print("  font_location     :", result.get("festival_font_location_placeholder"))
     print("  color_name        :", result.get("festival_color_name_placeholder"))
     print("  color_period      :", result.get("festival_color_period_placeholder"))
     print("  color_location    :", result.get("festival_color_location_placeholder"))
