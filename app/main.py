@@ -29,7 +29,7 @@ app.mount(
 app.include_router(routes_festival.router)
 app.include_router(routes_cardnews_images.router)
 app.include_router(routes_poster.router)
-app.include_router(routes_banner.router)
+# app.include_router(routes_banner.router)
 app.include_router(routes_proposal.router)
 app.include_router(routes_total_trend.router)
 
