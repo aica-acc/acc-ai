@@ -71,9 +71,10 @@ from app.service.banner_khs.make_road_banner import (  # type: ignore
 )
 
 # 폰트/색상 추천 모듈 (지하철/버스 공용으로 사용)
-from app.service.font_color.bus_font_color_recommend import (  # type: ignore
-    recommend_fonts_and_colors_for_bus,
+from app.service.font_color.subway_platform_font_color_recommend import (  # type: ignore
+    recommend_fonts_and_colors_for_subway_platform,
 )
+
 
 
 # -------------------------------------------------------------
@@ -445,22 +446,17 @@ def run_screendoor_a_type_high_to_editor(
     )
 
     # 4) 폰트/색상 추천
-    font_color_result = recommend_fonts_and_colors_for_bus(
-        bus_type="subway_screendoor_a_type_high",  # 타입 식별용
-        image_path=create_result["image_path"],
-        festival_name_placeholder=create_result["festival_name_placeholder"],
-        festival_period_placeholder=create_result["festival_period_placeholder"],
-        festival_location_placeholder=create_result["festival_location_placeholder"],
-        festival_base_name_placeholder=create_result[
-            "festival_base_name_placeholder"
-        ],
-        festival_base_period_placeholder=create_result[
-            "festival_base_period_placeholder"
-        ],
-        festival_base_location_placeholder=create_result[
-            "festival_base_location_placeholder"
-        ],
-    )
+    font_color_result = recommend_fonts_and_colors_for_subway_platform(
+    placement_type="screendoor_a_type_wall",
+    image_path=create_result["image_path"],
+    festival_name_placeholder=create_result["festival_name_placeholder"],
+    festival_period_placeholder=create_result["festival_period_placeholder"],
+    festival_location_placeholder=create_result["festival_location_placeholder"],
+    festival_base_name_placeholder=create_result["festival_base_name_placeholder"],
+    festival_base_period_placeholder=create_result["festival_base_period_placeholder"],
+    festival_base_location_placeholder=create_result["festival_base_location_placeholder"],
+)
+
 
     original_image_path = create_result.get("image_path") or ""
 
