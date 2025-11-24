@@ -117,6 +117,8 @@ async def handle_image_creation(body: models.CreateImageRequest):
             generated_results.append({
                 "style_name": style_name,
                 "image_url": image_url,
+                "file_name": final_filename,
+                "file_path": final_filepath,   # ⭐ 추가
                 "visual_prompt": final_prompt,
                 "text_content": text_content
             })
