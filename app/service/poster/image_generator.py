@@ -1,88 +1,95 @@
-# image_generator.py (v29: '텍스트 없는' 배경 전용 생성기)
-
 import os
-from dotenv import load_dotenv
+import openai
 import requests
-import io
-from PIL import Image
-import replicate # ⭐️ Replicate 라이브러리 (필수)
+from dotenv import load_dotenv
 
-# ----------------------------------------------------
-# 1. API 키 설정
-# ----------------------------------------------------
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") # (poster_generator.py용)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai.api_key = OPENAI_API_KEY
 
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
-if not REPLICATE_API_TOKEN:
-    print("[image_generator] REPLICATE_API_TOKEN을 .env 파일에서 찾을 수 없습니다.")
-else:
-    os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
-
-# ----------------------------------------------------
-# ⭐️ 3단계 최종 함수 (v29: '텍스트 없는' 배경 생성)
-# ----------------------------------------------------
-def create_background_image_v29(background_prompt, width, height, output_filename="background_v29.png"):
+# 1. 🌐 [핵심] 글로벌 버전(영어 전용) 프롬프트 변환
+def translate_to_english(raw_prompt, title_k, date_k, location_k):
     """
-    [v29] bytedance/dreamina-3.1 모델을 사용하여
-    '텍스트 없는' 고품질 배경 이미지를 생성합니다.
+    한글 정보를 받아 '외국인 관광객용 글로벌 포스터' 컨셉의 
+    강력한 영어 프롬프트로 재설계합니다. (한글 생성 원천 봉쇄)
     """
-    print(f"  [image_generator] 3단계 '배경 이미지 생성' (v29 - Dreamina {width}x{height}) 시작...")
+    print(f"  [image_generator] 글로벌 포스터(English Only) 프롬프트 최적화 중...")
     
-    if not REPLICATE_API_TOKEN:
-        return {"error": "Replicate API 토큰이 설정되지 않았습니다."}
-    if not background_prompt:
-        return {"error": "Dreamina에 전달할 배경 프롬프트가 없습니다."}
-        
-    try:
-        # --- (Step 1) Replicate 'Dreamina' 배경 생성 ---
-        
-        # ⭐️ [v29] 프롬프트에 'text-free'를 한 번 더 강조 (안전장치)
-        final_prompt = f"{background_prompt}, no text, no letters, text-free, no writing, blank, empty"
-        
-        print(f"    - (1/2) Replicate (bytedance/dreamina-3.1) '배경' 호출 중...")
-        
-        dreamina_model_id = "bytedance/dreamina-3.1"
-        
-        output = replicate.run(
-            dreamina_model_id,
-            input={
-                "prompt": final_prompt, # ⭐️ '텍스트 없는' 배경 프롬프트
-                "width": width,
-                "height": height,
-                "aspect_ratio": "custom", 
-                "negative_prompt": "text, letters, writing, signature, watermark, typography", # ⭐️ 텍스트 생성 강력히 방지
-                "num_outputs": 1,
-                "resolution": "2K" 
-            }
-        )
-        
-        # ⭐️ v22.1 버그 수정 적용 (단일 객체 반환)
-        image_url = output
-        if isinstance(output, list):
-            image_url = output[0]
-        
-        print(f"    - (1/2) Replicate '배경' 이미지 다운로드 중...")
-        image_response = requests.get(image_url)
-        image_response.raise_for_status()
-        
-        final_image = Image.open(io.BytesIO(image_response.content))
+    # GPT-4에게 내릴 지령: "한국적인 느낌은 살리되, 글자는 100% 영어로 해라"
+    system_instruction = """
+    You are an expert DALL-E 3 Prompt Engineer.
+    Your goal is to create a prompt for an **"International Festival Poster"** targeting global tourists.
 
-        # --- (Step 2) 최종 파일 저장 ---
-        save_path = os.path.join(os.path.dirname(__file__), output_filename)
-        final_image.save(save_path)
-        
-        print(f"    - (2/2) '배경' 저장 완료! (경로: {save_path})")
-        
-        return {"status": "success", "image_path": save_path}
+    [CRITICAL MISSION]
+    The AI (DALL-E) tends to accidentally generate Korean text (Hangul) because the topic is Korean.
+    You MUST write a prompt that **FORBIDS Korean text** and forces **English Typography**.
+
+    [YOUR TASK]
+    1. **TRANSLATE:** Convert Title, Date, Location into natural English.
+       - Ex: "거제 몽돌" -> "GEOJE MONGDOL"
+    
+    2. **SCENE DESCRIPTION:** - Describe the festival visuals (fireworks, beach, etc.).
+       - **IMPORTANT:** Add "International style", "Global tourist poster" to the description.
+
+    3. **TYPOGRAPHY INSTRUCTIONS:**
+       - Explicitly state: "The text must be written in **ENGLISH ONLY**."
+       - "Render the title '[ENGLISH TITLE]' in the center."
+       - "Render the date '[ENGLISH DATE]' at the bottom."
+    
+    4. **NEGATIVE PROMPT (Safety Lock):**
+       - End the prompt with: **"DO NOT USE KOREAN CHARACTERS. NO HANGUL. ENGLISH TEXT ONLY."**
+    """
+
+    user_content = f"""
+    [Original Concept]: {raw_prompt}
+    [Title]: {title_k}
+    [Date]: {date_k}
+    [Location]: {location_k}
+    """
+
+    try:
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-4-turbo",
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_content}
+            ]
+        )
+        final_english_prompt = response.choices[0].message.content
+        print(f"    👉 최종 영어 프롬프트: {final_english_prompt[:100]}...")
+        return final_english_prompt
 
     except Exception as e:
-        print(f"    ❌ 배경 이미지 생성 중 오류 발생: {e}")
-        return {"error": f"Replicate API 오류 (v29): {e}"}
+        print(f"    ⚠️ 번역/최적화 실패 (기본값 사용): {e}")
+        return f"International Festival Poster. Title: '{title_k}' (English Only). Date: '{date_k}'. Style: {raw_prompt}. NO KOREAN TEXT."
 
-# ----------------------------------------------------
-# (참고) v22.1 함수 - 이제 이 함수는 사용되지 않습니다.
-# ----------------------------------------------------
-def create_poster_image_v22(*args, **kwargs):
-    print("  [image_generator] (v22.1 함수 호출됨 - v29로 업그레이드 필요)")
-    return {"error": "v22.1 함수는 더 이상 사용되지 않습니다. v29를 호출하세요."}
+# 2. 🎨 OpenAI DALL-E 3 이미지 생성
+def generate_image_dalle3(prompt, width, height, output_path):
+    print(f"  [DALL-E 3] 생성 요청...")
+    
+    # 세로형 포스터 규격 강제
+    dalle_size = "1024x1792"
+    
+    try:
+        client = openai.OpenAI()
+        response = client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size=dalle_size,
+            quality="hd", # HD 화질
+            n=1,
+        )
+
+        image_url = response.data[0].url
+        print(f"    - 이미지 URL 확보 완료")
+
+        img_data = requests.get(image_url).content
+        with open(output_path, 'wb') as f:
+            f.write(img_data)
+            
+        return {"status": "success", "file_path": output_path}
+
+    except Exception as e:
+        print(f"    ❌ DALL-E 3 생성 오류: {e}")
+        return {"error": str(e)}
