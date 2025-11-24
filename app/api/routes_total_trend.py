@@ -24,7 +24,6 @@ async def analyze_total_trend(
         filename = os.path.basename(path)
         return f"http://127.0.0.1:5000/static/total_trend_images/{filename}"
 
-
     try:
         # ================================
         # 1) GOOGLE TRENDS (1년)
