@@ -29,8 +29,17 @@ app.mount(
 app.include_router(routes_festival.router)
 app.include_router(routes_cardnews_images.router)
 app.include_router(routes_poster.router)
+app.include_router(routes_banner.router)
 app.include_router(routes_proposal.router)
 app.include_router(routes_total_trend.router)
+
+# app/api/data 폴더를 /static 이라는 URL로 매핑
+app.mount(
+    "/static",
+    StaticFiles(directory="app/data"),
+    name="static",
+)
+
 
 @app.get("/")
 def root():
