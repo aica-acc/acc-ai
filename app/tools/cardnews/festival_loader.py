@@ -48,7 +48,6 @@ def load_festivals(csv_path: str) -> List[Dict]:
 
     return df.to_dict(orient="records")
 
-
 def filter_festivals_by_region(festivals: List[Dict], region: str, limit: int) -> List[Dict]:
     """입력한 지역(region)에 해당하는 상위 n개 축제 반환"""
     region_filtered = [f for f in festivals if region in str(f.get("region", ""))]

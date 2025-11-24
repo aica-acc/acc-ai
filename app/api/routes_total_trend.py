@@ -24,7 +24,6 @@ async def analyze_total_trend(
         filename = os.path.basename(path)
         return f"http://127.0.0.1:5000/static/total_trend_images/{filename}"
 
-
     try:
         # ================================
         # 1) GOOGLE TRENDS (1년)
@@ -61,7 +60,9 @@ async def analyze_total_trend(
         # ================================
         # 5) YOUTUBE TREND
         # ================================
+        
         youtube_trend = run_youtube_trend(keyword=keyword)
+        
 
          # 🧩 이미지 경로 로컬 → URL 변환
         for item in youtube_trend:
