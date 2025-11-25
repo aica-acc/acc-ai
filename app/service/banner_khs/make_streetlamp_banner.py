@@ -2,7 +2,7 @@
 """
 app/service/banner_khs/make_streetlamp_banner.py
 
-가로등(1:3) 세로 현수막용 Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + 색상 추천 + editor 저장 모듈.
+가로등(1:3) 세로 현수막용 Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + editor 저장 모듈.
 
 역할
 - 참고용 포스터 이미지(URL 또는 로컬 파일 경로)와 축제 정보(한글)를 입력받아서
@@ -11,9 +11,8 @@ app/service/banner_khs/make_streetlamp_banner.py
   3) 한글 자리수에 맞춘 플레이스홀더 텍스트(라틴 알파벳 시퀀스)를 사용해서
      1:3 세로 가로등 현수막 프롬프트를 조립한다. (write_streetlamp_banner)
   4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 생성하고 저장한다. (create_streetlamp_banner)
-  5) 완성된 배너 이미지를 기반으로 텍스트 색상 추천을 수행한다.
-  6) run_streetlamp_banner_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
-  7) python make_streetlamp_banner.py 로 단독 실행할 수 있다.
+  5) run_streetlamp_banner_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
+  6) python make_streetlamp_banner.py 로 단독 실행할 수 있다.
 
 전제 환경변수
 - OPENAI_API_KEY               : OpenAI API 키
@@ -71,11 +70,6 @@ from app.service.banner_khs.make_road_banner import (  # type: ignore
     _download_image_bytes,
 )
 
-# 공용 텍스트 색상 추천 유틸
-from app.service.font_color.image_text_color_recommend import (  # type: ignore
-    recommend_text_colors_for_image,
-)
-
 
 # -------------------------------------------------------------
 # 1) 영어 씬 묘사 + 플레이스홀더 텍스트 → 세로 가로등 현수막 프롬프트
@@ -131,6 +125,40 @@ def _build_streetlamp_banner_prompt_en(
         "draw only clean floating letters directly over the background. "
         "The quotation marks in this prompt are for instruction only; do not draw quotation marks in the final image."
     )
+
+    # f"{base_scene_en}의 높이 1:3 세로 삽화,"
+    # "첨부된 포스터 이미지를 밝은 색상, 조명 및 분위기에만 참고할 수 있습니다."
+    # f"하지만 {details_phrase_en}으로 완전히 새로운 장면을 만들고 있습니다."
+    # "이 이미지를 깨끗한 독립형 1:3 수직 축제 배너 아트워크로 디자인하세요,"
+    # 가로등, 기둥, 철조망, 벽, 건물에 걸려 있는 것이 표시되지 않으며, 주변 도로나 환경이 없습니다
+    # 배너가 인쇄되거나 다듬어질 때 중요한 텍스트가 잘리지 않도록 상단과 하단에 작은 안전 여백을 남겨두세요
+
+    # # 👉 텍스트 위치/간격: 상단 중앙 + 서로 가깝게
+    # 배너의 상단 중앙 영역에 정확히 세 줄의 가로줄 텍스트를 배치합니다
+    # "모든 것이 캔버스의 수직 중앙 바로 위, 맨 위 가장자리 근처가 아닌 완벽하게 중앙에 정렬되어 있습니다."
+    # "이 세 줄을 하나의 컴팩트한 텍스트 블록으로 시각적으로 서로 가깝게 유지하세요,"
+    # "위, 중간, 아래쪽 선 사이에 작고 고른 수직 간격만 있습니다,"
+    # "기간, 제목, 위치가 하나의 단위로 긴밀하게 묶여 있는 느낌을 줍니다."
+
+    # f"가운데 줄에 \\"{name_text}\"를 매우 크고 굵은 산세리프 문자로 씁니다,"
+    # "전체 이미지에서 가장 큰 텍스트이며 매우 먼 거리에서도 명확하게 읽을 수 있습니다."
+    # "이 제목 블록을 시각적으로 컴팩트 텍스트 그룹을 지배할 정도로 크게 만드세요,"
+    # "그리고 그것은 절대 작은 자막이나 자막처럼 보여서는 안 됩니다."
+    # f"제목 위 상단 줄에 작은 굵은 산세리프 문자로 \\"{period_text}\\"라고 적습니다,"
+    # "하지만 여전히 이 글자들은 작은 캡션 텍스트가 아닌 멀리서도 크고 밝고 선명하게 읽을 수 있도록 유지하세요."
+    # f"아래쪽 줄에는 제목 아래에 위쪽 줄보다 약간 작은 크기로 \\"{location_text}\\"라고 적습니다."
+    # "하지만 여전히 대담한 헤드라인 텍스트로, 결코 얇거나 미묘하지 않습니다."
+
+    # "세 줄 모두 모든 배경 요소 위에 명확하게 가장 앞쪽 시각적 층에 그려야 합니다,"
+    # "장면에서 등장인물, 객체, 효과는 글자의 어떤 부분도 겹치거나 덮거나 자를 수 없습니다."
+    # "이 세 줄의 텍스트를 각각 한 번씩 정확하게 그리세요. 두 번째 복사본, 그림자 복사본, 반사를 그리지 마세요,"
+    # "이미지의 다른 부분에 있는 이 텍스트의 mirrored 사본, 개요 전용 사본, 흐릿한 사본 또는 부분 사본"
+    # 지상, 하늘, 건물, 장식 또는 인터페이스 요소를 포함하여
+    # "다른 텍스트는 전혀 추가하지 마세요: 단어, 라벨, 날짜, 숫자, 로고, 워터마크 또는 UI 요소는 추가하지 마세요."
+    # "이 세 줄을 beyond."
+    # "텍스트를 별도의 배너, 간판, 패널, 상자, 프레임, 리본 또는 물리적 보드에 배치하지 마십시오;"
+    # 배경 바로 위에 깨끗한 떠다니는 글자만 그립니다
+    # "이 프롬프트의 따옴표는 지시용이므로 최종 이미지에 따옴표를 그리지 마세요."
 
     return prompt.strip()
 
@@ -394,10 +422,7 @@ def run_streetlamp_banner_to_editor(
       2) create_streetlamp_banner(..., save_dir=before_image_dir) 로
          실제 세로 가로등 배너 이미지를 생성하고,
          app/data/editor/<run_id>/before_image/streetlamp_banner.png 로 저장한다.
-      3) 공용 색상 추천 유틸(recommend_text_colors_for_image)을 사용해
-         생성된 배너 이미지 위에 올릴 텍스트 색상 3개
-         (제목/기간/장소용)을 추천받는다.
-      4) 배너 타입, 한글 축제 정보, 배너 크기, 추천된 텍스트 색상만을 포함한
+      3) 배너 타입, 한글 축제 정보, 배너 크기만을 포함한
          최소 결과 JSON을 구성하여
          app/data/editor/<run_id>/before_data/streetlamp_banner.json 에 저장한다.
 
@@ -409,10 +434,7 @@ def run_streetlamp_banner_to_editor(
         "festival_period_ko": ...,
         "festival_location_ko": ...,
         "width": 1024,
-        "height": 3072,
-        "festival_color_name_placeholder": "#RRGGBB",
-        "festival_color_period_placeholder": "#RRGGBB",
-        "festival_color_location_placeholder": "#RRGGBB"
+        "height": 3072
       }
     """
 
@@ -437,15 +459,7 @@ def run_streetlamp_banner_to_editor(
         save_dir=before_image_dir,
     )
 
-    # 4) 색상 추천 (공용 유틸 사용)
-    colors = recommend_text_colors_for_image(
-        image_path=create_result["image_path"],
-        slots=3,
-    )
-    # slots=3 보장 가정
-    color_name, color_period, color_location = colors[0], colors[1], colors[2]
-
-    # 5) 최종 결과 JSON (API/백엔드에서 사용할 최소 정보 형태)
+    # 4) 최종 결과 JSON (API/백엔드에서 사용할 최소 정보 형태)
     result: Dict[str, Any] = {
         "type": BANNER_TYPE,
         "pro_name": BANNER_PRO_NAME,
@@ -454,12 +468,9 @@ def run_streetlamp_banner_to_editor(
         "festival_location_ko": festival_location_ko,
         "width": int(create_result.get("width", BANNER_WIDTH)),
         "height": int(create_result.get("height", BANNER_HEIGHT)),
-        "festival_color_name_placeholder": color_name,
-        "festival_color_period_placeholder": color_period,
-        "festival_color_location_placeholder": color_location,
     }
 
-    # 6) before_data 밑에 JSON 저장 (파일명 고정)
+    # 5) before_data 밑에 JSON 저장 (파일명 고정)
     json_path = before_data_dir / "streetlamp_banner.json"
     with json_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
@@ -480,19 +491,18 @@ def main() -> None:
     를 실행하면, 아래에 적어둔 입력값으로
     - 세로 가로등 배너 Seedream 입력 생성
     - Seedream 호출로 실제 이미지 생성
-    - 텍스트 색상 추천
     - app/data/editor/<run_id>/before_data, before_image 저장
     까지 한 번에 수행한다.
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 8  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+    run_id = 9  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
     # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\busan.png"
-    festival_name_ko = "제12회 해운대 빛축제"
-    festival_period_ko = "2025.11.29 ~ 2026.01.18"
-    festival_location_ko = "해운대해수욕장 구남로 일원"
+    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\goheung.png"
+    festival_name_ko = "제 15회 고흥 우주항공 축제"
+    festival_period_ko = "2025.05.03 ~ 2025.05.06"
+    festival_location_ko = "고흥군 봉래면 나로우주센터 일원"
 
     # 2) 혹시라도 비어 있으면 바로 알려주기
     missing = []
@@ -524,7 +534,7 @@ def main() -> None:
     json_path = editor_root / "before_data" / "streetlamp_banner.json"
     image_path = editor_root / "before_image" / "streetlamp_banner.png"
 
-    print("✅ streetlamp banner 생성 + 색상 추천 + editor 저장 완료")
+    print("✅ streetlamp banner 생성 + editor 저장 완료")
     print("  run_id            :", run_id)
     print("  type              :", result.get("type"))
     print("  pro_name          :", result.get("pro_name"))
@@ -534,9 +544,6 @@ def main() -> None:
     print("  width x height    :", result.get("width"), "x", result.get("height"))
     print("  json_path         :", json_path)
     print("  image_path        :", image_path)
-    print("  color_name        :", result.get("festival_color_name_placeholder"))
-    print("  color_period      :", result.get("festival_color_period_placeholder"))
-    print("  color_location    :", result.get("festival_color_location_placeholder"))
 
 
 if __name__ == "__main__":
