@@ -16,7 +16,7 @@ app/service/subway/make_subway_inner.py
 결과 JSON 형태 (editor용 최소 정보):
 
 {
-  "type": "subway_innner",
+  "type": "subway_inner",
   "pro_name": "지하철 차내액자",
   "festival_name_ko": "제7회 담양산타축제",
   "festival_period_ko": "2025.12.24 ~ 2025.12.25",
@@ -52,14 +52,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_ROOT = PROJECT_ROOT / "app" / "data"
 
 # 지하철 차내액자 고정 스펙
-SUBWAY_INNER_TYPE = "subway_innner"  # 사용자가 지정한 철자 그대로
+SUBWAY_INNER_TYPE = "subway_inner"  # 사용자가 지정한 철자 그대로
 SUBWAY_INNER_PRO_NAME = "지하철 차내액자"
 SUBWAY_INNER_WIDTH_PX = 1446
 SUBWAY_INNER_HEIGHT_PX = 1024
-
-# 실제 인쇄 사이즈(cm) – 결과 JSON용
-SUBWAY_INNER_WIDTH_CM = 51.4
-SUBWAY_INNER_HEIGHT_CM = 36.4
 
 # .env 로딩
 env_path = PROJECT_ROOT / ".env"
@@ -416,8 +412,8 @@ def run_subway_inner_to_editor(
         "pro_name": SUBWAY_INNER_PRO_NAME,
         "festival_name_ko": create_result["festival_name_ko"],
         "festival_period_ko": create_result["festival_period_ko"],
-        "width": SUBWAY_INNER_WIDTH_CM,
-        "height": SUBWAY_INNER_HEIGHT_CM,
+        "width": SUBWAY_INNER_WIDTH_PX,
+        "height": SUBWAY_INNER_HEIGHT_PX,
     }
 
     # 5) before_data 밑에 JSON 저장 (파일명 고정)
