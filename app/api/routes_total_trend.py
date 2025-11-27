@@ -17,7 +17,7 @@ router = APIRouter(prefix="/analyze", tags=["Total Trend Analysis"])
 async def analyze_total_trend(
     keyword: str = Form(...),
     title: str = Form(...),
-    festivalStartDate: str = Form(...)
+    festivalStartDate: str = Form(...),
 ):
     
     def convert_local_path_to_url(path: str):
@@ -32,7 +32,7 @@ async def analyze_total_trend(
         google_trend = get_google_trends_1year(
             keyword=keyword,
             festival_title=title,
-            festival_start_date=festivalStartDate
+            festival_start_date=festivalStartDate,
         )
 
         # ================================
@@ -41,7 +41,7 @@ async def analyze_total_trend(
         related_keywords = get_google_related_from_llm(
             keyword=keyword,
             festival_title=title,
-            festival_start_date=festivalStartDate
+            festival_start_date=festivalStartDate,
         )
 
         # ================================
@@ -50,7 +50,7 @@ async def analyze_total_trend(
         naver_weekly = get_naver_datalab_1year(
             keyword=keyword,
             festival_title=title,
-            festival_start_date=festivalStartDate
+            festival_start_date=festivalStartDate,
         )
 
         # ================================
@@ -85,3 +85,4 @@ async def analyze_total_trend(
     except Exception as e:
         print("❌ FastAPI total trend error:", e)
         raise HTTPException(500, "Total trend analysis failed")
+

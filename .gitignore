@@ -25,6 +25,7 @@ wheels/
 *.txt
 service_account.json
 check_model.py
+*.mp4
 # test 코드
 __init__.py
 
