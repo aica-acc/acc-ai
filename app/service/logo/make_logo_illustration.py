@@ -6,17 +6,27 @@ app/service/logo/make_logo_illustration.py
 Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + editor 저장 모듈.
 
 역할
-- 참고용 포스터 이미지(URL 또는 로컬 파일 경로)와 축제 정보(한글)를 입력받아서
+- 참고용 포스터 이미지 경로 + 축제 정보(한글)를 입력받아서
   1) 한글 축제명에서 '제 N회' 같은 회차 표현을 제거하고
   2) OpenAI LLM으로 축제명/기간/장소를 영어로 번역하고
-  3) 영어 축제명에서 연도/숫자/회차를 제거한 "축제 이름"만 남긴다.
-     (예: "2025 Boryeong Mud Festival" -> "Boryeong Mud Festival")
-  4) 포스터 색감/무드/키워드를 분석해서, 락/우주/머드/빛/겨울 등 테마를 추정한다.
-  5) 테마에 맞는 심벌(기타, 해골, 로켓, 물결, 눈꽃 등)을 포함한
-     배지형/엠블럼형 로고 프롬프트를 조립한다. (write_logo_illustration)
-  6) 해당 JSON을 Replicate(Seedream)에 넘겨 실제 일러스트 로고 이미지를 생성하고 저장한다. (create_logo_illustration)
+  3) 텍스트는 연도/회차를 제거한 영어 축제명 그대로여야 하고, 일러스트와 시각적으로 하나의 로고처럼 어우러져야 한다.
+  4) 축제명(한/영) + 기간 + 장소 텍스트와 포스터 이미지를 LLM에 전달해서
+     축제 테마와 시각적 모티프를 요약한 영어 문장(festival_theme_en)을 만든다.
+  5) festival_theme_en을 기반으로,
+     "단색 배경 + 중앙의 단순 일러스트 + 연도/회차를 제거한 영어 축제명 텍스트" 조합의
+     로고 프롬프트를 조립한다. (write_logo_illustration)
+  6) 해당 JSON을 Replicate(Seedream)에 넘겨 (image_input 없이)
+     실제 일러스트 로고 이미지를 생성하고 저장한다. (create_logo_illustration)
   7) run_logo_illustration_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
   8) python make_logo_illustration.py 로 단독 실행할 수 있다.
+
+
+디자인 제약 (반드시 지켜야 할 규칙)
+1. 배경은 단색(ONE solid color)이어야 한다. 그라디언트/패턴/질감/테두리 금지.
+2. 중앙에 축제와 관련된 "단순한 일러스트"와 "텍스트"가 합쳐진 하나의 로고 마크가 있어야 한다.
+3. 텍스트는 연도/회차를 제거한 영어 축제명 그대로여야 하고, 일러스트와 시각적으로 하나의 로고처럼 어우러져야 한다.
+4. 배경 + (중앙 일러스트 + 텍스트) 외에는 어떤 요소도 추가하면 안 된다.
+   (추가 아이콘, 장식선, 배지, 그림, 부가 텍스트, 워터마크 등 모두 금지)
 
 결과 JSON 예시:
 
@@ -44,13 +54,13 @@ import os
 import re
 import sys
 import time
-from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import replicate
 from dotenv import load_dotenv
 from replicate.exceptions import ModelError
+from openai import OpenAI
 
 # -------------------------------------------------------------
 # 프로젝트 루트 및 .env 로딩 + sys.path 설정
@@ -72,28 +82,45 @@ if str(PROJECT_ROOT) not in sys.path:
 # road_banner 공용 유틸 재사용
 from app.service.banner_khs.make_road_banner import (  # type: ignore
     _translate_festival_ko_to_en,
-    _build_scene_phrase_from_poster,
-    _extract_poster_url_from_input,
+    _build_scene_phrase_from_poster,   # ✅ 포스터 분석 함수 추가
     _save_image_from_file_output,
-    _download_image_bytes,
 )
+
+# -------------------- OpenAI 클라이언트 --------------------
+_client: Optional[OpenAI] = None
+
+
+def _get_openai_client() -> OpenAI:
+    """OPENAI_API_KEY를 사용하는 전역 OpenAI 클라이언트 (한 번만 생성)."""
+    global _client
+    if _client is None:
+        _client = OpenAI()
+    return _client
 
 
 # -------------------------------------------------------------
 # 회차 제거: "제 15회 ○○축제" → "○○축제"
 # -------------------------------------------------------------
 def _strip_edition_from_name_ko(name: str) -> str:
-    """축제명에서 '제 15회', '15회' 같은 회차 표현을 제거."""
+    """축제명에서 '제 15회', '15회', 앞에 붙은 연도(2025 등) 같은 회차/연도 표현을 제거."""
     if not name:
         return ""
     s = str(name)
+
+    # 앞에 붙은 연도 (예: "2024 안동국제 탈춤 페스티벌")
+    s = re.sub(r"^\s*\d{4}\s*년?\s*", "", s)
+
+    # "제 15회", "제15회" 패턴 제거
     s = re.sub(r"^\s*제\s*\d+\s*회\s*", "", s)
+
+    # "15회 ○○축제" 패턴 제거
     s = re.sub(r"^\s*\d+\s*회\s*", "", s)
+
     return s.strip()
 
 
 # -------------------------------------------------------------
-# 영어 축제명에서 연도/숫자/서수 제거
+# 영어 축제명에서 연도/숫자/서수 제거 (테마 추론용 + 텍스트용)
 # -------------------------------------------------------------
 def _strip_numbers_from_english_name(name_en: str) -> str:
     """
@@ -121,178 +148,129 @@ def _strip_numbers_from_english_name(name_en: str) -> str:
 
 
 # -------------------------------------------------------------
-# 영어 정보에서 테마 추론 (rock, mud, light, space, winter 등)
+# 축제 정보(텍스트)에서 테마 문장 추론 (LLM)
 # -------------------------------------------------------------
 def _infer_theme_from_english(
-    name_en: str,
-    base_scene_en: str,
-    details_phrase_en: str,
+    festival_name_ko: str,
+    festival_name_en_for_theme: str,
+    festival_period_en: str,
+    festival_location_en: str,
 ) -> str:
     """
-    영어 축제명 + 씬 묘사를 바탕으로 대략적인 테마 문자열을 만든다.
-    - rock / music
-    - mud
-    - light / illumination
-    - space / aerospace
-    - snow / ice / winter
-    - fireworks
-    - default: generic festival
+    축제명(한/영) + 기간 + 장소 텍스트를 바탕으로,
+    로고용 시각 테마를 한 줄 영어 문장으로 요약한다.
+
+    - 예: "space rockets, launch pad, deep blue night sky, stars"
+    - 예: "colorful lanterns, glowing lights, warm evening streets"
     """
-    text = f"{name_en} {base_scene_en} {details_phrase_en}".lower()
-
-    if "rock" in text:
-        return "rock music festival"
-    if "jazz" in text or "band" in text or "concert" in text:
-        return "music festival"
-    if "mud" in text or "clay" in text:
-        return "mud festival"
-    if "light" in text or "illumination" in text or "lantern" in text or "neon" in text:
-        return "light festival"
-    if (
-        "aerospace" in text
-        or "space" in text
-        or "cosmic" in text
-        or "galaxy" in text
-        or "star" in text
-    ):
-        return "space festival"
-    if "snow" in text or "ice" in text or "winter" in text or "frost" in text:
-        return "winter festival"
-    if "firework" in text or "pyro" in text:
-        return "fireworks festival"
-
-    return "festival logo"
-
-
-# -------------------------------------------------------------
-# 1) 일러스트 로고 프롬프트 (테마 기반 심벌 + 영문 축제명)
-# -------------------------------------------------------------
-def _build_logo_illustration_prompt_en(
-    festival_name_en: str,
-    festival_theme_en: str,
-    base_scene_en: str,
-    details_phrase_en: str,
-) -> str:
-    """
-    축제 영문 타이틀 + 테마 심벌 조합 로고용 Seedream 프롬프트.
-
-    - 중앙/상단에는 테마를 강하게 드러내는 추상/심볼형 아이콘
-    - 그 아래 또는 오른쪽에는 영문 축제명 1~3줄
-    - 배경은 흰색 또는 매우 밝은 단색
-    - 숫자(연도, 회차), 한글, 슬로건은 절대 넣지 않음
-    """
+    client = _get_openai_client()
+    model = os.getenv("BANNER_LLM_MODEL", "gpt-4o-mini")
 
     def _n(s: str) -> str:
         return " ".join(str(s or "").split())
 
-    festival_name_en = _n(festival_name_en)
+    festival_name_ko = _n(festival_name_ko)
+    festival_name_en_for_theme = _n(festival_name_en_for_theme)
+    festival_period_en = _n(festival_period_en)
+    festival_location_en = _n(festival_location_en)
+
+    system_msg = (
+        "You write very short English descriptions of visual themes for logos. "
+        "Given information about a festival, you must extract the underlying visual theme "
+        "and main symbolic motifs. Use only concepts that are clearly implied by the input. "
+        "Your output will be used as a hint for an image generation model."
+    )
+
+    user_msg = (
+        "We are going to design a simple illustration-style logo with an icon and an English title.\n\n"
+        f"Korean festival name: {festival_name_ko}\n"
+        f"English festival name (no numbers): {festival_name_en_for_theme}\n"
+        f"Festival period (EN): {festival_period_en}\n"
+        f"Festival location (EN): {festival_location_en}\n\n"
+        "From this information, write ONE short English phrase (max 12 words) that describes the visual theme "
+        "and key symbolic motifs. Focus on objects, environments, and abstract motifs that would make sense as "
+        "a simple illustration.\n\n"
+        "Rules:\n"
+        "- Use only ideas that are clearly suggested by the names, period, or location.\n"
+        "- Do NOT invent random unrelated themes.\n"
+        '- Do NOT include years, dates, place names, or the word \"festival\".\n'
+        "Return only the phrase, nothing else."
+    )
+
+    resp = client.responses.create(
+        model=model,
+        input=[
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ],
+    )
+
+    # responses.create 결과에서 순수 텍스트만 추출 (gpt-4o-mini 기준)
+    try:
+        theme_text = resp.output[0].content[0].text  # type: ignore[attr-defined]
+    except Exception as e:  # pragma: no cover - 방어적 코드
+        raise RuntimeError(f"축제 테마 LLM 응답 파싱 실패: {e!r} / raw={resp!r}")
+
+    theme_text = " ".join(str(theme_text or "").strip().split())
+    if not theme_text:
+        raise RuntimeError("축제 테마 문장을 LLM에서 비어 있게 반환했습니다.")
+
+    return theme_text
+
+
+# -------------------------------------------------------------
+# 1) 일러스트 로고 프롬프트
+#    - 단색 배경
+#    - 중앙의 "단순 일러스트 + 영어 축제명" 하나만 존재
+# -------------------------------------------------------------
+def _build_logo_illustration_prompt_en(
+    festival_full_name_en: str,
+    festival_theme_en: str,
+) -> str:
+    def _n(s: str) -> str:
+        return " ".join(str(s or "").split())
+
+    festival_full_name_en = _n(festival_full_name_en)
     festival_theme_en = _n(festival_theme_en)
-    base_scene_en = _n(base_scene_en)
-    details_phrase_en = _n(details_phrase_en)
 
-    prompt = f"""
-Clean, modern festival logo in flat vector style.
-Use a pure white or very light solid background with absolutely NO texture,
-NO paper mockup, NO 3D foil or embossing.
+    prompt = (
+        # 상단: 전체 규칙 요약 (1)~(5)
+        "Square 1:1 festival illustration logo. "
+        "Follow these exact visual rules: "
+        "1) The background must be a single solid flat color. "
+        "2) In the center, place one compact combined logo made only of a simple illustration and the full English festival title. "
+        "3) Design the illustration to clearly reflect the festival theme described in the text. "
+        "4) Make the festival title text visually integrated with the illustration so they look like one unified logo mark. "
+        "5) Other than the solid background and this single central illustration+text logo, do not draw anything else at all. "
 
-###
-THEME-BASED SYMBOL
-Create a bold abstract symbol that strongly reflects the festival theme: "{festival_theme_en}".
-The symbol MUST be clear, iconic, and built from simple geometric shapes.
+        # 배경: 완전 단색
+        "Fill the entire canvas with exactly one flat background color, from edge to edge. "
+        "Do not use gradients, textures, patterns, noise, borders, vignettes, frames, photographs, or images in the background. "
 
-ROCK / MUSIC FESTIVAL EXAMPLES:
-- electric guitars (single or crossed)
-- clean vector skull (no gore)
-- microphones
-- speakers / amps
-- thunder bolts / energy shapes
-- drumsticks or drums
-- vinyl record icon
-- rock hand sign with two raised fingers
-- wings, banners, shields, stars
+        # 중앙 로고: 단순 일러스트 + 영어 축제명
+        f"The central logo must be a very simple flat illustration combined with text. "
+        f"The illustration should be a clean minimal symbol that represents this festival theme: \"{festival_theme_en}\". "
+        "Use a minimal, vector-like style with clean geometric shapes and avoid complex scenery or multiple scattered elements. "
+        f"The text must show the full English festival title exactly as follows: \"{festival_full_name_en}\". "
+        "Arrange the illustration and the text so they clearly belong together as a single compact logo in the centre of the canvas, "
+        "with generous empty margin around them. The text must remain easy to read from a distance. "
 
-LIGHT FESTIVAL EXAMPLES:
-- glowing arcs or beams
-- starbursts
-- simplified lantern shapes
-- neon line geometry
+        # 텍스트 규칙
+        "Use the festival title exactly as provided. Do not translate, shorten, or change any words. "
+        "Do not add any extra text such as dates, locations, slogans, URLs, hashtags, or tags. "
+        "Use only Latin letters from the title; do not use Korean or any other scripts. "
 
-MUD FESTIVAL EXAMPLES:
-- dynamic splash and blob shapes
-- round emblems with mud-like silhouettes (vector only)
+        # 스타일 제한
+        "Keep the illustration and text in a simple flat style. "
+        "Do not use 3D effects, inner or outer glows, gradients, heavy shadows, glossy highlights, or realistic rendering. "
 
-SPACE / AEROSPACE FESTIVAL EXAMPLES:
-- rockets
-- planets
-- orbit rings
-- minimal satellite-like shapes
-- abstract constellations
+        # 절대 추가 금지 요소들
+        "Do NOT add other icons, pictograms, characters, landscapes, decorative shapes, lines, frames, badges, or logos anywhere. "
+        "Do NOT place extra graphics or text in the corners or along the edges. "
+        "The final image must contain only: one solid background colour and one central combined illustration plus the full English festival title. "
+        "Do not draw quotation marks."
+    )
 
-WINTER / SNOW FESTIVAL EXAMPLES:
-- snowflakes
-- icy shards
-- frosty circles
-
-The symbol must be stylised, minimal, and logo-like,
-not a detailed illustration or scene.
-
-###
-LAYOUT VARIATIONS
-The overall logo layout CAN be:
-- a circular badge with the symbol in the centre,
-- an oval or shield emblem,
-- a top–bottom stacked layout (symbol on top, text below),
-- a left symbol + right text layout,
-- or a symbol inside a circle with the festival name arranged around the rim.
-
-Choose whichever layout creates the strongest logo composition.
-
-###
-TEXT RULES
-Below or beside the symbol, place the exact English festival name:
-"{festival_name_en}"
-
-You MUST copy this title string EXACTLY, character by character.
-- Do NOT change, remove, shorten, abbreviate, or repeat any word.
-- Do NOT invent extra words like "Fes", "Fest", "Event", or add another "Festival".
-- Do NOT translate, paraphrase, or re-order any words.
-- The ONLY allowed modification is inserting line breaks between the existing words.
-
-You may break the title into one, two, or three lines,
-but you must preserve the original order and spelling of all words
-in "{festival_name_en}" with no additions or deletions.
-
-Use a strong, legible typeface (modern sans-serif or refined serif).
-Keep the text crisp, vector-like, and not overly decorative.
-
-The ONLY text allowed in the entire image is the festival name "{festival_name_en}".
-Do NOT add any years, numbers, edition counts, dates, slogans, or taglines.
-Do NOT add Korean text or any non-Latin scripts.
-Do NOT add URLs, hashtags, labels like "ESTD", "2024", "FES" or "FEST".
-
-###
-STYLE RULES
-- Pure vector look with sharp edges and strong shapes.
-- Use a limited colour palette inspired by the attached poster image:
-  base your colours on the mood and palette suggested by {base_scene_en} and {details_phrase_en}.
-- You may use subtle gradients inside the symbol or text,
-  but the background must stay solid and flat.
-- NO texture, halftone, grain, or realistic lighting.
-
-###
-FORBIDDEN
-- Do NOT copy the exact composition or objects from the poster.
-- Do NOT draw complex scenes, characters, full instruments in detail, or landscapes.
-- Do NOT add watermarks, UI elements, or app icons.
-- Do NOT add shadows under the canvas or 3D extrusions.
-
-###
-FINAL GOAL
-Produce a bold, thematic festival logo that feels ready for branding:
-a strong central symbol that clearly reflects the theme,
-plus the English festival name integrated cleanly below or beside it.
-Do not draw quotation marks.
-"""
     return prompt.strip()
 
 
@@ -308,14 +286,17 @@ def write_logo_illustration(
     """
     축제 일러스트 로고(2048x2048)용 Seedream 입력 JSON 생성.
 
-    - festival_name_ko 에 '제 7회', '제 15회' 등이 포함되어 있어도
-      회차를 제거한 순수 축제명만 번역에 사용한다.
-    - 번역된 영어 축제명에서 연도/숫자를 제거한 "축제 이름"만 남긴다.
-    - 포스터 색감/무드/키워드를 이용해 대략적인 축제 테마 문자열을 만든다.
-    - 이미지에는 이 영문 축제명만 텍스트로 사용하도록 프롬프트를 구성한다.
+    - poster_image_url 은 참고용 포스터 이미지 경로(또는 URL)이다.
+      이미지는 Seedream image_input 으로 직접 사용하지 않고 LLM 분석용으로만 활용한다.
+    - festival_name_ko 에 '제 7회', '제 15회', '2025년' 등이 포함되어 있어도
+      회차/연도를 제거한 순수 축제명만 번역에 사용한다.
+    - 최종 텍스트는 연도/숫자/회차를 제거한 영어 축제명만 사용한다.
+    - 축제명(한/영) + 기간 + 장소 + 포스터 이미지를 이용해
+      LLM으로 대략적인 축제 테마 문장(festival_theme_en)을 만든다.
+    - 이미지에는 이 "영문 축제명(연도/회차 제거)"만 텍스트로 사용하도록 프롬프트를 구성한다.
     """
 
-    # 0) 회차 제거된 순수 축제명
+    # 0) 회차/연도 제거된 순수 한글 축제명
     festival_name_ko_clean = _strip_edition_from_name_ko(festival_name_ko)
 
     # 1) 한글 축제 정보 → 영어 번역
@@ -328,57 +309,66 @@ def write_logo_illustration(
     period_en = translated.get("period_en", "")
     location_en = translated.get("location_en", "")
 
-    # 1-1) 영어 축제명에서 연도/숫자/서수 제거
-    name_en = _strip_numbers_from_english_name(name_en_raw)
-
-    if not name_en:
+    if not name_en_raw:
         raise ValueError(
             f"영어 축제명이 비어 있어 일러스트 로고를 생성할 수 없습니다. (원본: {name_en_raw!r})"
         )
 
-    # 2) 포스터 이미지 분석 → 색감/무드/키워드 정리
-    scene_info = _build_scene_phrase_from_poster(
-        poster_image_url=poster_image_url,
-        festival_name_en=name_en,
+    # 1-1) 테마 추론용: 연도/숫자/서수 제거한 버전
+    name_en_for_theme = _strip_numbers_from_english_name(name_en_raw) or name_en_raw
+
+    # 1-2) 최종 텍스트용: 연도/숫자/서수를 제거한 순수 축제명
+    festival_full_name_en = _strip_numbers_from_english_name(name_en_raw) or " ".join(
+        str(name_en_raw).split()
+    )
+
+    # 2) 텍스트 기반 테마 문장 추론 (LLM)
+    theme_from_text = _infer_theme_from_english(
+        festival_name_ko=festival_name_ko_clean,
+        festival_name_en_for_theme=name_en_for_theme,
         festival_period_en=period_en,
         festival_location_en=location_en,
     )
-    base_scene_en = scene_info["base_scene_en"]
-    details_phrase_en = scene_info["details_phrase_en"]
 
-    # 3) 영어 정보 + 씬 묘사 → 테마 추론
-    festival_theme_en = _infer_theme_from_english(
-        name_en=name_en,
-        base_scene_en=base_scene_en,
-        details_phrase_en=details_phrase_en,
+    # 2-1) 포스터 기반 씬/색감/무드 분석 (LLM vision) – 타이포그래피 로고와 동일한 방식
+    scene_info = _build_scene_phrase_from_poster(
+        poster_image_url=poster_image_url,
+        festival_name_en=festival_full_name_en,
+        festival_period_en=period_en,
+        festival_location_en=location_en,
     )
+    base_scene_en = str(scene_info.get("base_scene_en", ""))
+    details_phrase_en = str(scene_info.get("details_phrase_en", ""))
 
-    # 4) 최종 프롬프트 조립
+    # 2-2) 텍스트 테마 + 포스터 테마를 하나의 문장으로 합치기
+    combined_theme_parts = [
+        theme_from_text,
+        base_scene_en,
+        details_phrase_en,
+    ]
+    combined_theme = " ".join(
+        " ".join(part for part in combined_theme_parts if part).split()
+    )
+    festival_theme_en = combined_theme or theme_from_text or base_scene_en or details_phrase_en
+
+    # 3) 최종 프롬프트 조립
     prompt = _build_logo_illustration_prompt_en(
-        festival_name_en=name_en,
+        festival_full_name_en=festival_full_name_en,
         festival_theme_en=festival_theme_en,
-        base_scene_en=base_scene_en,
-        details_phrase_en=details_phrase_en,
     )
 
-    # 5) Seedream / Replicate 입력 JSON 구성
+    # 4) Seedream / Replicate 입력 JSON 구성 (image_input 없이)
     seedream_input: Dict[str, Any] = {
         "size": "custom",
         "width": LOGO_ILLUST_WIDTH_PX,
         "height": LOGO_ILLUST_HEIGHT_PX,
         "prompt": prompt,
         "max_images": 1,
-        "aspect_ratio": "match_input_image",
+        "aspect_ratio": "1:1",
         "enhance_prompt": True,
         "sequential_image_generation": "disabled",
-        "image_input": [
-            {
-                "type": "image_url",
-                "url": poster_image_url,
-            }
-        ],
         # 결과 조립용 메타데이터
-        "festival_name_en": name_en,
+        "festival_name_en": festival_full_name_en,
         "festival_theme_en": festival_theme_en,
         "festival_base_name_ko": str(festival_name_ko or ""),
         "festival_base_name_ko_clean": str(festival_name_ko_clean or ""),
@@ -419,29 +409,18 @@ def create_logo_illustration(
 ) -> Dict[str, Any]:
     """
     write_logo_illustration(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
-    1) image_input 에서 포스터 URL/경로를 추출하고,
-    2) 그 이미지를 다운로드(또는 로컬 파일 읽기)해 파일 객체로 만든 뒤,
-    3) Replicate(bytedance/seedream-4 또는 LOGO_ILLUSTRATION_MODEL)에
-       prompt + image_input과 함께 전달해
-       실제 2048x2048 일러스트 로고 이미지를 생성하고,
-    4) 생성된 이미지를 로컬에 저장한다.
+    1) 프롬프트/사이즈 정보를 읽고,
+    2) Replicate(bytedance/seedream-4 또는 LOGO_ILLUSTRATION_MODEL)에
+       prompt만 전달해 (image_input 없이) 실제 2048x2048 일러스트 로고 이미지를 생성하고,
+    3) 생성된 이미지를 로컬에 저장한다.
     """
 
-    poster_url = _extract_poster_url_from_input(seedream_input)
-    if not poster_url:
-        raise ValueError(
-            "seedream_input.image_input 에 참조 포스터 이미지 URL/경로가 없습니다."
-        )
-
-    img_bytes = _download_image_bytes(poster_url)
-    image_file = BytesIO(img_bytes)
-
-    prompt = seedream_input.get("prompt", "")
+    prompt = str(seedream_input.get("prompt", ""))
     size = seedream_input.get("size", "custom")
     width = int(seedream_input.get("width", LOGO_ILLUST_WIDTH_PX))
     height = int(seedream_input.get("height", LOGO_ILLUST_HEIGHT_PX))
     max_images = int(seedream_input.get("max_images", 1))
-    aspect_ratio = seedream_input.get("aspect_ratio", "match_input_image")
+    aspect_ratio = seedream_input.get("aspect_ratio", "1:1")
     enhance_prompt = bool(seedream_input.get("enhance_prompt", True))
     sequential_image_generation = seedream_input.get(
         "sequential_image_generation", "disabled"
@@ -453,7 +432,6 @@ def create_logo_illustration(
         "height": height,
         "prompt": prompt,
         "max_images": max_images,
-        "image_input": [image_file],
         "aspect_ratio": aspect_ratio,
         "enhance_prompt": enhance_prompt,
         "sequential_image_generation": sequential_image_generation,
@@ -567,6 +545,7 @@ def run_logo_illustration_to_editor(
     static_prefix = "/static"
     image_url = f"{base_url}{static_prefix}/editor/{run_id}/before_image/{image_filename}"
 
+    # 🔽 여기에서 poster_image_url 필드만 제거
     result: Dict[str, Any] = {
         "type": LOGO_ILLUST_TYPE,
         "pro_name": LOGO_ILLUST_PRO_NAME,
@@ -592,12 +571,12 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 5
+    run_id = 10
 
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\arco.png"
-    festival_name_ko = "예술 인형 축제"
-    festival_period_ko = "2025.11.04 ~ 2025.11.09"
-    festival_location_ko = "아르코꿈밭극장, 텃밭스튜디오"
+    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\geoje.png"
+    festival_name_ko = "거제몽돌해변축제"
+    festival_period_ko = "2013.07.13 ~ 2013.07.14"
+    festival_location_ko = "학동흑진주몽돌해변"
 
     # 2) 필수값 체크
     missing = []

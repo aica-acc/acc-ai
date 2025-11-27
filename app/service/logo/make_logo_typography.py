@@ -22,6 +22,25 @@ Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + editor 저장 �
 - 메인: 모노그램 알파벳 (예: GAF, BMF)
 - 서브: 영어 축제명에서 연도/숫자/회차를 제거한 "축제 이름"만
   예) "2025 Boryeong Mud Festival" -> "Boryeong Mud Festival"
+
+결과 JSON 예시:
+
+{
+  "type": "logo",
+  "pro_name": "로고",
+  "festival_name_en": "Goheung Aerospace Festival",
+  "monogram_text": "GAF",
+  "width": 2048,
+  "height": 2048,
+  "image_url": "http://localhost:5000/static/editor/9/before_image/logo_typography_....png"
+}
+
+전제 환경변수
+- OPENAI_API_KEY                  : OpenAI API 키
+- BANNER_LLM_MODEL                : (선택) 배너/버스/로고용 LLM, 기본값 "gpt-4o-mini"
+- LOGO_TYPOGRAPHY_MODEL           : (선택) 기본값 "bytedance/seedream-4"
+- LOGO_TYPOGRAPHY_SAVE_DIR        : (선택) 직접 create_logo_typography 를 쓸 때 저장 경로
+- ACC_AI_BASE_URL                 : (선택) 이미지 전체 URL 앞부분, 기본값 "http://localhost:5000"
 """
 
 from __future__ import annotations
@@ -31,7 +50,6 @@ import os
 import re
 import sys
 import time
-from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -45,8 +63,8 @@ from replicate.exceptions import ModelError
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_ROOT = PROJECT_ROOT / "app" / "data"
 
-LOGO_TYPO_TYPE = "logo"
-LOGO_TYPO_PRO_NAME = "로고"
+LOGO_TYPO_TYPE = "logo_typography"
+LOGO_TYPO_PRO_NAME = "타이포그래피 로고"
 LOGO_TYPO_WIDTH_PX = 2048
 LOGO_TYPO_HEIGHT_PX = 2048
 
@@ -60,9 +78,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.service.banner_khs.make_road_banner import (  # type: ignore
     _translate_festival_ko_to_en,
     _build_scene_phrase_from_poster,
-    _extract_poster_url_from_input,
     _save_image_from_file_output,
-    _download_image_bytes,
 )
 
 
@@ -118,17 +134,25 @@ def _build_monogram_from_english(
 ) -> str:
     """
     영어 축제명에서 라틴 알파벳만 추출해 3~5자의 모노그램(대문자) 생성.
+
+    예)
+      "Goheung Aerospace Festival" -> "GAF"
+      "Boryeong Mud Festival"     -> "BMF"
+      "Daejeon Guitar Festival"   -> "DGF"
     """
     if not name_en:
         raise ValueError("festival_name_en 이 비어 있어서 모노그램을 만들 수 없습니다.")
 
+    # 영어 단어들만 추출
     words: List[str] = re.findall(r"[A-Za-z]+", name_en)
     if not words:
         raise ValueError(f"영어 축제명에서 알파벳 단어를 찾을 수 없습니다: {name_en!r}")
 
+    # 각 단어의 첫 글자 → GAF, DGF 같은 형태
     initials = "".join(w[0] for w in words if w)[0:max_len].upper()
     letters: List[str] = list(initials)
 
+    # 너무 짧으면 단어 안쪽에서도 추가로 알파벳 채워 넣기
     if len(letters) < min_len:
         for w in words:
             for ch in w[1:]:
@@ -149,7 +173,6 @@ def _build_monogram_from_english(
 
 # -------------------------------------------------------------
 # 1) 타이포그래피 로고 프롬프트 (모노그램 + 아래 풀네임)
-#   👉 배경 단색 + 카드/액자/일러스트 절대 금지로 더 강하게
 # -------------------------------------------------------------
 def _build_logo_typography_prompt_en(
     festival_name_en: str,
@@ -160,9 +183,11 @@ def _build_logo_typography_prompt_en(
     """
     축제 알파벳 타이포그래피 로고용 Seedream 영어 프롬프트.
 
-    요구사항 핵심
-    1) 큰 모노그램 알파벳: monogram_text
-    2) 그 바로 아래, 같은 중심선에 전체 영어 축제명: festival_name_en
+    규칙 (이미지 기준)
+    1) 배경은 무조건 단색
+    2) 가운데에 모노그램 텍스트(알파벳만)
+    3) 모노그램 텍스트는 축제 테마/무드에 맞게 디자인
+    4) 그 바로 아래 한 줄로 전체 영어 축제명
     """
 
     def _n(s: str) -> str:
@@ -175,63 +200,46 @@ def _build_logo_typography_prompt_en(
     spaced_letters = " ".join(list(monogram_text))
 
     prompt = (
-        # 전체 컨셉
-        "Minimal square 1:1 festival typography logo on a perfectly flat single-color background. "
-        "This is a clean logo, not a poster and not a scene illustration. "
+        "Square 1:1 festival typography logo. "
+        "Follow these exact visual rules: "
+        "1) The background must be a single solid flat color. "
+        "2) In the center, place a large monogram text made only of the given Latin letters. "
+        "3) Design the monogram to match the festival theme and mood described in the text description. "
+        "4) Directly below the monogram, place one line of small text showing the full English festival name. "
+        "5) Other than the solid background and these two text elements, do not draw anything else at all. "
 
-        # 포스터는 색/무드 참고용만
-        "Use the attached poster image ONLY as reference for color palette and overall mood, "
-        f"as suggested by {base_scene_en} and {details_phrase_en}. "
-        "Do NOT copy the poster layout, drawings, or characters. "
+        # 배경: 완전 단색
+        "Fill the entire canvas with exactly one flat background color, from edge to edge. "
+        "Do not use gradients, textures, patterns, noise, borders, vignettes, frames, or images in the background. "
 
-        # 배경: 딱 한 가지 색
-        "Fill the entire canvas with exactly ONE solid flat background color from edge to edge. "
-        "Choose this background color from the dominant colors of the poster. "
-        "There must be NO panels, NO cards, NO separate boxes, NO frames, NO gradients, "
-        "NO textures, NO noise, NO paper effect and NO second background color. "
-
-        # -------------------------------
-        # 1) 큰 모노그램 알파벳
-        # -------------------------------
-        f"In the visual center of the canvas, place a very large bold monogram made ONLY from the letters \"{monogram_text}\". "
+        # 모노그램: 알파벳만, 축제 테마 기반 디자인
+        f"In the center of the canvas, create a large monogram using ONLY the letters \"{monogram_text}\". "
         f"Use exactly these characters: {spaced_letters}. "
-        "The monogram must look like a designed logo mark, not a default font. "
-        "You may slightly adjust spacing or connect strokes, but every letter must stay clearly readable. "
-        "Style the letters to reflect the festival theme using shapes and shading only, "
-        "while keeping edges sharp and vector-like. "
+        "The monogram must be the main focus of the image. "
+        "Design the shape, thickness, curvature, and details of the letters so that they clearly reflect "
+        "the specific festival theme and mood described here: "
+        f"{base_scene_en}. {details_phrase_en}. "
+        "You may stylise and modify the letters, but every character must remain clearly readable. "
 
-        # -------------------------------
-        # 2) 그 바로 아래, 축제 풀네임 1줄
-        # -------------------------------
-        f"Directly BELOW this monogram, on the same vertical centerline, add ONE subtitle line with the full English festival name: \"{festival_name_en}\". "
-        "There MUST be exactly two separate pieces of text in the image and BOTH are REQUIRED: "
-        f"1) the large monogram \"{monogram_text}\", and "
-        f"2) the subtitle line \"{festival_name_en}\". "
-        "If the subtitle is missing, the design is incorrect and must be fixed. "
+        # 아래 한 줄: 전체 영어 축제명
+        f"Immediately below the monogram, add one single line of smaller, thin, clean text that shows "
+        f"the full English festival name: \"{festival_name_en}\". "
+        "Place this line very close to the monogram, centered horizontally, with the total width visually similar "
+        "to the width of the monogram above. "
+        "Make this subtitle clearly readable but noticeably smaller and lighter than the monogram. "
 
-        "Place the subtitle close to the monogram (not far away at the bottom of the canvas), "
-        "with a small comfortable gap between them. "
-        "Horizontally center the subtitle under the monogram so that their widths visually match. "
-        "Make the subtitle clearly readable: about one third of the monogram letter height, "
-        "with strokes thick enough to remain legible after scaling. "
-        "Use a clean modern sans-serif typeface without decorative effects. "
-
-        # 텍스트 제한
-        "Do NOT add any other text besides these two: the monogram and the subtitle line. "
-        "No extra words, no abbreviations like Fes or Fest, no years, no dates, no edition numbers, "
-        "no slogans, no taglines, no URLs, no hashtags, and no labels such as ESTD. "
-        "Do NOT use Korean or any non-Latin characters. "
-
-        # 기타 금지 요소
-        "Do NOT draw icons, pictograms, hands, puppets, characters, instruments or other objects around the logo. "
-        "All visible shapes other than the background must be part of the monogram or the subtitle text only. "
-        "Do NOT show posters, banners, signboards, mockups, shadows under the canvas, "
-        "embossing, foil stamping, or 3D extrusions. "
-        "Focus purely on a strong monogram plus one subtitle line on a single flat background color. "
+        # 절대 추가 금지 요소들
+        "Do NOT add any other text besides: "
+        f"1) the monogram \"{monogram_text}\", and "
+        f"2) the subtitle \"{festival_name_en}\". "
+        "Do NOT add dates, numbers, slogans, URLs, hashtags, labels, or any other words. "
+        "Do NOT draw icons, pictograms, rockets, characters, landscapes, symbols, shapes, or decorative objects. "
+        "Do NOT add logos, badges, borders, frames, or extra graphic elements. "
+        "The final image must contain only: a solid color background, the central monogram, and the one subtitle line below it. "
         "Do not draw quotation marks."
     )
-    return prompt.strip()
 
+    return prompt.strip()
 
 
 # -------------------------------------------------------------
@@ -243,10 +251,21 @@ def write_logo_typography(
     festival_period_ko: str,
     festival_location_ko: str,
 ) -> Dict[str, Any]:
-    """타이포그래피 로고(2048x2048)용 Seedream 입력 JSON 생성."""
+    """
+    축제 알파벳 타이포그래피 로고(2048x2048)용 Seedream 입력 JSON 생성.
 
+    - festival_name_ko 에 '제 7회', '제 15회' 등이 포함되어 있어도
+      회차를 제거한 순수 축제명만 번역에 사용한다.
+    - 영어 축제명에서 연도/숫자를 제거한 뒤 3~5자 모노그램을 만든다.
+      (예: "2025 Boryeong Mud Festival" → "Boryeong Mud Festival" → BMF)
+    - 이미지에는 한글은 직접 사용하지 않고,
+      모노그램 + 영어 풀 네임(연도/회차 제거된 축제명)만 사용하도록 프롬프트를 구성한다.
+    """
+
+    # 0) 회차 제거된 순수 축제명
     festival_name_ko_clean = _strip_edition_from_name_ko(festival_name_ko)
 
+    # 1) 한글 축제 정보 → 영어 번역
     translated = _translate_festival_ko_to_en(
         festival_name_ko=festival_name_ko_clean,
         festival_period_ko=festival_period_ko,
@@ -256,6 +275,7 @@ def write_logo_typography(
     period_en = translated.get("period_en", "")
     location_en = translated.get("location_en", "")
 
+    # 1-1) 영어 축제명에서 연도/숫자/회차 제거
     name_en = _strip_numbers_from_english_name(name_en_raw)
 
     if not name_en:
@@ -263,8 +283,10 @@ def write_logo_typography(
             f"영어 축제명이 비어 있어 알파벳 로고를 생성할 수 없습니다. (원본: {name_en_raw!r})"
         )
 
+    # 2) 영어 축제명 → 모노그램(3~5자 알파벳)
     monogram_text = _build_monogram_from_english(name_en, min_len=3, max_len=5)
 
+    # 3) 포스터 이미지 분석 → 색감/무드/키워드 정리
     scene_info = _build_scene_phrase_from_poster(
         poster_image_url=poster_image_url,
         festival_name_en=name_en,
@@ -272,6 +294,7 @@ def write_logo_typography(
         festival_location_en=location_en,
     )
 
+    # 4) 최종 프롬프트 조립
     prompt = _build_logo_typography_prompt_en(
         festival_name_en=name_en,
         monogram_text=monogram_text,
@@ -279,21 +302,21 @@ def write_logo_typography(
         details_phrase_en=scene_info["details_phrase_en"],
     )
 
+    # 5) Seedream / Replicate 입력 JSON 구성
+    #    -> 포스터 이미지는 Seedream에 보내지 않고, LLM 분석용으로만 사용.
     seedream_input: Dict[str, Any] = {
-        "size": "custom",
+        "size": "custom",  # Seedream 허용값: "1K", "2K", "4K", "custom"
         "width": LOGO_TYPO_WIDTH_PX,
         "height": LOGO_TYPO_HEIGHT_PX,
         "prompt": prompt,
         "max_images": 1,
-        "aspect_ratio": "match_input_image",
+        "aspect_ratio": "1:1",
         "enhance_prompt": True,
         "sequential_image_generation": "disabled",
-        "image_input": [
-            {
-                "type": "image_url",
-                "url": poster_image_url,
-            }
-        ],
+        # Seedream에는 이미지 입력을 보내지 않는다 (텍스트로만 생성)
+        "image_input": [],
+        # 결과 조립용으로 필요한 원본 정보
+        "poster_image_url": poster_image_url,
         "festival_name_en": name_en,
         "monogram_text": monogram_text,
         "festival_base_name_ko": str(festival_name_ko or ""),
@@ -309,6 +332,13 @@ def write_logo_typography(
 # 3) 저장 디렉터리
 # -------------------------------------------------------------
 def _get_logo_typography_save_dir() -> Path:
+    """
+    LOGO_TYPOGRAPHY_SAVE_DIR 환경변수가 있으면:
+      - 절대경로면 그대로 사용
+      - 상대경로면 PROJECT_ROOT 기준으로 사용
+    없으면:
+      - PROJECT_ROOT/app/data/logo_typography 사용
+    """
     env_dir = os.getenv("LOGO_TYPOGRAPHY_SAVE_DIR")
     if env_dir:
         p = Path(env_dir)
@@ -326,21 +356,19 @@ def create_logo_typography(
     save_dir: Path | None = None,
     prefix: str = "logo_typography_",
 ) -> Dict[str, Any]:
-    poster_url = _extract_poster_url_from_input(seedream_input)
-    if not poster_url:
-        raise ValueError(
-            "seedream_input.image_input 에 참조 포스터 이미지 URL/경로가 없습니다."
-        )
-
-    img_bytes = _download_image_bytes(poster_url)
-    image_file = BytesIO(img_bytes)
+    """
+    write_logo_typography(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
+    Replicate(bytedance/seedream-4 또는 LOGO_TYPOGRAPHY_MODEL)에
+    텍스트 프롬프트만 전달해 실제 2048x2048 타이포그래피 로고 이미지를 생성하고,
+    생성된 이미지를 로컬에 저장한다.
+    """
 
     prompt = seedream_input.get("prompt", "")
     size = seedream_input.get("size", "custom")
     width = int(seedream_input.get("width", LOGO_TYPO_WIDTH_PX))
     height = int(seedream_input.get("height", LOGO_TYPO_HEIGHT_PX))
     max_images = int(seedream_input.get("max_images", 1))
-    aspect_ratio = seedream_input.get("aspect_ratio", "match_input_image")
+    aspect_ratio = seedream_input.get("aspect_ratio", "1:1")
     enhance_prompt = bool(seedream_input.get("enhance_prompt", True))
     sequential_image_generation = seedream_input.get(
         "sequential_image_generation", "disabled"
@@ -352,7 +380,7 @@ def create_logo_typography(
         "height": height,
         "prompt": prompt,
         "max_images": max_images,
-        "image_input": [image_file],
+        # 이미지 conditioning 없이 텍스트만 사용
         "aspect_ratio": aspect_ratio,
         "enhance_prompt": enhance_prompt,
         "sequential_image_generation": sequential_image_generation,
@@ -423,6 +451,24 @@ def run_logo_typography_to_editor(
     festival_period_ko: str,
     festival_location_ko: str,
 ) -> Dict[str, Any]:
+    """
+    입력:
+        run_id
+        poster_image_url
+        festival_name_ko
+        festival_period_ko
+        festival_location_ko
+
+    동작:
+      1) write_logo_typography(...) 로 Seedream 입력용 seedream_input 생성
+      2) create_logo_typography(..., save_dir=before_image_dir) 로
+         실제 타이포그래피 로고 이미지를 생성하고,
+         app/data/editor/<run_id>/before_image/logo_typography_*.png 로 저장한다.
+      3) 타입, 영문 축제명, 모노그램 텍스트, 픽셀 단위 가로/세로, static 전체 URL을 포함한
+         최소 결과 JSON을 구성하여
+         app/data/editor/<run_id>/before_data/logo_typography.json 에 저장한다.
+    """
+
     seedream_input = write_logo_typography(
         poster_image_url=poster_image_url,
         festival_name_ko=festival_name_ko,
@@ -473,13 +519,15 @@ def main() -> None:
     python app/service/logo/make_logo_typography.py
     """
 
-    run_id = 5
+    # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
+    run_id = 10
+ 
+    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\geoje.png"
+    festival_name_ko = "거제몽돌해변축제"
+    festival_period_ko = "2013.07.13 ~ 2013.07.14"
+    festival_location_ko = "학동흑진주몽돌해변"
 
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\arco.png"
-    festival_name_ko = "예술 인형 축제"
-    festival_period_ko = "2025.11.04 ~ 2025.11.09"
-    festival_location_ko = "아르코꿈밭극장, 텃밭스튜디오"
-
+    # 2) 필수값 체크
     missing = []
     if not poster_image_url:
         missing.append("poster_image_url")
@@ -496,6 +544,7 @@ def main() -> None:
             print("  -", k)
         return
 
+    # 3) 실제 실행
     result = run_logo_typography_to_editor(
         run_id=run_id,
         poster_image_url=poster_image_url,

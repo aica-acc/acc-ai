@@ -821,7 +821,7 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 9  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+    run_id = 10  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
     # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
     # 필요하면 아래 한 줄을 str(DATA_ROOT / "banner" / "busan.png") 로 바꿔도 됨
