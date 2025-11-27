@@ -253,7 +253,7 @@ def save_to_short_file(texts, output_path):
 
 def run_youtube_search(keyword: str):
     """유튜브 검색 실행 → long/short 파일 생성"""
-
+    print("start22")
     # 1) 숏폼
     short_texts = fetch_and_print_shorts(youtube, keyword)
     save_to_short_file(short_texts, SHORT_OUTPUT_PATH)

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # app/api/routes_banner.py
 from __future__ import annotations
-from typing import Optional, Literal, Any, Dict
+from typing import Optional, Literal, Any, Dict, List
 from pathlib import Path
 import os, json
 
@@ -18,12 +18,21 @@ try:
 except Exception:
     make_banner_prompt_service = None
 
+# 🔹 기존 LLM 기반 텍스트 트렌드 분석 (원래 /banner/analyze에서 쓰던 거)
 try:
     from app.service.banner.banner_trend_analysis.service_banner_trend_analysis import (
         analyze_banner_trend_with_llm,
     )
 except Exception:
     analyze_banner_trend_with_llm = None
+
+# 🔹 새로 추가: 배너 이미지 기준 관련/최신 축제 추천 서비스
+try:
+    from app.service.banner.banner_trend_analysis.service_banner_image_trend_analysis import (
+        analyze_banner_image_trend,
+    )
+except Exception:
+    analyze_banner_image_trend = None
 
 # 프롬프트 동기화(한/영)
 from app.service.banner.banner_prompt_update.service_banner_prompt_update import (
@@ -42,7 +51,12 @@ def _default_save_dir() -> Path:
     return Path(os.getenv("BANNER_SAVE_DIR", "C:/final_project/ACC/assets/banners"))
 
 def _json_ok(payload: dict) -> JSONResponse:
-    return JSONResponse(content=jsonable_encoder(payload, custom_encoder={Path: lambda p: p.as_posix()}))
+    return JSONResponse(
+        content=jsonable_encoder(
+            payload,
+            custom_encoder={Path: lambda p: p.as_posix()},
+        )
+    )
 
 # -------------------- 스키마 --------------------
 class BannerAnalyzeRequest(BaseModel):
@@ -92,7 +106,8 @@ def create_prompt(req: PromptRequest):
         prompt_obj = make_banner_prompt_service(
             analysis_payload=req.analysis_payload,
             orientation=req.orientation,
-            width=req.width, height=req.height,
+            width=req.width,
+            height=req.height,
             aspect_ratio=req.aspect_ratio,
             resolution=req.resolution,
             use_pre_llm=req.use_pre_llm,
@@ -102,7 +117,10 @@ def create_prompt(req: PromptRequest):
         )
         return _json_ok(prompt_obj)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"banner prompt build failed: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"banner prompt build failed: {type(e).__name__}: {e}",
+        )
 
 @router.post("/generations")
 def create_generation(req: GenerationRequest):
@@ -113,7 +131,10 @@ def create_generation(req: GenerationRequest):
             try:
                 job_in = json.loads(job_in)
             except Exception:
-                raise HTTPException(status_code=422, detail="job must be an object (dict), not a JSON string.")
+                raise HTTPException(
+                    status_code=422,
+                    detail="job must be an object (dict), not a JSON string.",
+                )
 
         # 1) 한글 변경 → 영어 프롬포트 동기화
         job_synced = ensure_prompt_synced_before_generation(job_in)
@@ -132,7 +153,10 @@ def create_generation(req: GenerationRequest):
 
         return _json_ok(gen)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"banner generation failed: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"banner generation failed: {type(e).__name__}: {e}",
+        )
 
 @router.post("/generate-from-analysis")
 def generate_from_analysis(req: GenerateFromAnalysisRequest):
@@ -143,7 +167,8 @@ def generate_from_analysis(req: GenerateFromAnalysisRequest):
         prompt_obj = make_banner_prompt_service(
             analysis_payload=req.analysis_payload,
             orientation=req.orientation,
-            width=req.width, height=req.height,
+            width=req.width,
+            height=req.height,
             aspect_ratio=req.aspect_ratio,
             resolution=req.resolution,
             use_pre_llm=req.use_pre_llm,
@@ -167,14 +192,23 @@ def generate_from_analysis(req: GenerateFromAnalysisRequest):
 
         return _json_ok({"ok": True, "prompt": prompt_obj, "generation": gen})
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"banner generate-from-analysis failed: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"banner generate-from-analysis failed: {type(e).__name__}: {e}",
+        )
 
+# 🔹 기존: LLM 텍스트 리포트용 /banner/analyze (그대로 유지)
 @router.post("/analyze")
 def analyze_banner(req: BannerAnalyzeRequest):
     """
-    현수막 트렌드 분석 (LLM 기반)
+    현수막 텍스트 트렌드 분석 (LLM 기반)
     - 입력: p_name, user_theme, keywords
-    - 출력: banner_trend (Markdown 텍스트, 3단락)
+    - 출력: JSON 객체 (예: 3개 섹션)
+      {
+        "similar_theme_banner_analysis": "...",
+        "evidence_and_effects": "...",
+        "strategy_for_our_festival": "..."
+      }
     """
     if analyze_banner_trend_with_llm is None:
         raise HTTPException(
@@ -183,15 +217,51 @@ def analyze_banner(req: BannerAnalyzeRequest):
         )
 
     try:
-        banner_trend = analyze_banner_trend_with_llm(
+        trend = analyze_banner_trend_with_llm(
             p_name=req.p_name,
             user_theme=req.user_theme,
             keywords=req.keywords,
         )
-        return _json_ok({"banner_trend": banner_trend})
+        return _json_ok(trend)
     except Exception as e:
-        # LLM 호출 에러, 키 미설정 등
         raise HTTPException(
             status_code=400,
             detail=f"banner analyze failed: {type(e).__name__}: {e}",
+        )
+
+# 🔹 새로 추가: 배너 이미지 기준 관련/최신 축제 5개씩 추천
+@router.post("/analyze-image")
+def analyze_banner_image(req: BannerAnalyzeRequest):
+    """
+    배너/현수막 기준 관련/최신 축제 추천
+
+    입력:
+        - p_name: 축제명
+        - user_theme: 축제 테마/기획 의도
+        - keywords: 키워드 리스트
+
+    출력(JSON):
+        {
+          "related_festivals": [ { festival_name, banner_image_url, ... } x 최대 5 ],
+          "latest_festivals":  [ { festival_name, banner_image_url, ... } x 최대 5 ]
+        }
+    """
+    if analyze_banner_image_trend is None:
+        raise HTTPException(
+            status_code=501,
+            detail="banner image trend service not available (import 실패)",
+        )
+
+    try:
+        trend = analyze_banner_image_trend(
+            p_name=req.p_name,
+            user_theme=req.user_theme,
+            keywords=req.keywords,
+            # top_k 기본값 5 (함수 내부 기본값 사용)
+        )
+        return _json_ok(trend)
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"banner analyze-image failed: {type(e).__name__}: {e}",
         )

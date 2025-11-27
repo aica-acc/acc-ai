@@ -291,7 +291,7 @@ def run_youtube_trend(keyword: str = "크리스마스"):
     """
     YouTube 데이터 읽기 → LangGraph 실행 → 결과 저장 → dict 반환
     """
-
+    print("start")
     # 1) 데이터 읽기
     file_list = glob.glob(os.path.join(DATA_DIR, "youtube*"))
     informations = []
@@ -302,13 +302,20 @@ def run_youtube_trend(keyword: str = "크리스마스"):
     combined_info = "\n".join(informations)
 
     # 2) 그래프 실행
+    print("start33")
     state = {
         "query": f"{keyword} 기반 유튜브 트렌드 분석",
         "information": combined_info,
     }
 
     result = app.invoke(state)
+    # 테스트 용 확인 코드 이따 지우기 
     final = result["final_result"]
+    print("== DEBUG result:", result)
+    print("== DEBUG result keys:", result.keys())
+    print("== DEBUG final:", result.get("final_result"))
+    print("== DEBUG final type:", type(result.get("final_result")))
+    print("DEBUG final:", final, type(final))
 
     # 2.5) 여기서 이미지 처리 붙인다!
     final_with_images = []
