@@ -21,16 +21,10 @@ wheels/
 *.pdf
 *.webp
 *.txt
-<<<<<<< HEAD
-service_account.json
-check_model.py
-*.mp4
-=======
 *.ttf
 *.ttc
 *.otf
 *.woff
-
->>>>>>> dev
+*.mp4
 # test 코드
 __init__.py
