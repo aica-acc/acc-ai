@@ -19,7 +19,7 @@ DB 저장용 리턴 예시:
 {
   "db_file_type": "goods_sticker",
   "type": "image",
-  "db_file_path": "C:\\final_project\\ACC\\acc-front\\public\\data\\promotion\\M000001\\P000001\\goods\\sticker\\goods_sticker.png",
+  "db_file_path": "C:\\final_project\\ACC\\acc-front\\public\\data\\promotion\\M000001\\P000001\\goods\\goods_sticker.png",
   "type_ko": "스티커 굿즈"
 }
 
@@ -151,9 +151,6 @@ def _build_goods_sticker_prompt_en(
     return prompt.strip()
 
 
-
-
-
 # -------------------------------------------------------------
 # 4) write_goods_sticker: Seedream 입력 JSON 생성
 # -------------------------------------------------------------
@@ -185,7 +182,6 @@ def write_goods_sticker(
     location_en = translated["location_en"]
 
     # 3) 마스코트(참고 이미지) 분석 → 축제 씬/무드 묘사 얻기
-    #    (지금은 실제 프롬프트에 쓰지는 않지만, 일단 구조는 sign_toilet 과 동일하게 유지)
     scene_info = _build_scene_phrase_from_poster(
         poster_image_url=mascot_image_url,
         festival_name_en=name_en,
@@ -316,15 +312,15 @@ def create_goods_sticker(
             output = replicate.run(model_name, input=replicate_input)
             break
         except ModelError as e:
-            msg = str(e)
-            # Seedream 특유의 일시적인 에러 코드 케이스 한 번 더 시도
-            if "Prediction interrupted" in msg or "code: PA" in msg:
-                last_err = e
-                time.sleep(1.0)
-                continue
-            raise RuntimeError(
-                f"Seedream model error during goods sticker generation: {e}"
-            )
+                msg = str(e)
+                # Seedream 특유의 일시적인 에러 코드 케이스 한 번 더 시도
+                if "Prediction interrupted" in msg or "code: PA" in msg:
+                    last_err = e
+                    time.sleep(1.0)
+                    continue
+                raise RuntimeError(
+                    f"Seedream model error during goods sticker generation: {e}"
+                )
         except Exception as e:
             raise RuntimeError(
                 f"Unexpected error during goods sticker generation: {e}"
@@ -405,14 +401,15 @@ def run_goods_sticker_to_editor(
       1) write_goods_sticker(...) 로 Seedream 입력용 seedream_input 생성
       2) create_goods_sticker(..., save_dir=스티커 굿즈 저장 디렉터리) 로
          실제 스티커 굿즈 이미지를 생성하고,
-         acc-front/public/data/promotion/<member_no>/<p_no>/goods/sticker 아래에 저장한다.
+         acc-front/public/data/promotion/<member_no>/<p_no>/goods 아래에
+         goods_sticker.png 파일명으로 저장한다.
       3) DB 저장용 메타 정보 딕셔너리를 반환한다.
 
     반환:
       {
         "db_file_type": "goods_sticker",
         "type": "image",
-        "db_file_path": "C:\\...\\acc-front\\public\\data\\promotion\\M000001\\{p_no}\\goods\\sticker\\goods_sticker.png",
+        "db_file_path": "C:\\...\\acc-front\\public\\data\\promotion\\M000001\\{p_no}\\goods\\goods_sticker.png",
         "type_ko": "스티커 굿즈"
       }
     """
@@ -425,7 +422,7 @@ def run_goods_sticker_to_editor(
         festival_location_ko=festival_location_ko,
     )
 
-    # 2) 저장 디렉터리: acc-front/public/data/promotion/<member_no>/<p_no>/goods/sticker
+    # 2) 저장 디렉터리: acc-front/public/data/promotion/<member_no>/<p_no>/goods
     member_no = os.getenv("ACC_MEMBER_NO", "M000001")
     front_root = PROJECT_ROOT.parent / "acc-front"
     goods_dir = (
@@ -436,7 +433,6 @@ def run_goods_sticker_to_editor(
         / member_no
         / str(p_no)
         / "goods"
-        / "sticker"
     )
     goods_dir.mkdir(parents=True, exist_ok=True)
 
@@ -469,11 +465,11 @@ def main() -> None:
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
     p_no = "10"
-    
+
     mascot_image_url = r"C:\final_project\ACC\acc-ai\app\data\mascot\kimcheon.png"
     festival_name_ko = "2025 김천김밥축제"
     festival_period_ko = "2024.10.25 ~ 2024.10.26"
-    festival_location_ko = "김천시 직지문화공우너 및 사명대사공원 일원"
+    festival_location_ko = "김천시 직지문화공원 및 사명대사공원 일원"
 
     # 2) 필수값 체크
     missing = []
