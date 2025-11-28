@@ -2,40 +2,45 @@
 """
 app/service/bus/make_bus_shelter.py
 
-버스쉘터(1:1.8) 광고용 Seedream 입력/프롬프트 생성
-+ 생성 이미지 저장 + 폰트/색상 추천 + editor 저장 모듈.
+버스 쉘터(1024x1906) 세로 광고판용 Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + editor 저장 모듈.
 
 역할
 - 참고용 포스터 이미지(URL 또는 로컬 파일 경로)와 축제 정보(한글)를 입력받아서
   1) OpenAI LLM으로 축제명/기간/장소를 영어로 번역하고
   2) 포스터 이미지를 시각적으로 분석해서 "축제 씬 묘사"를 영어로 만든 뒤
-  3) 한글 자리수에 맞춘 플레이스홀더 텍스트(라틴 알파벳 시퀀스)를 사용해서
-     1:1.8 비율의 버스쉘터 광고 프롬프트를 조립한다. (write_bus_shelter)
-  4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 생성하고 저장한다. (create_bus_shelter)
-  5) 완성된 배너 이미지를 기반으로 폰트/색상 추천을 수행한다.
+  3) LLM으로 한국어 서브 타이틀(festival_subtitle_ko)을 생성한다.
+  4) 축제명/서브타이틀을 이용해 버스 쉘터 세로 광고 프롬프트를 조립한다. (write_bus_shelter)
+  5) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 생성하고 저장한다. (create_bus_shelter)
   6) run_bus_shelter_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
   7) python make_bus_shelter.py 로 단독 실행할 수 있다.
 
-전제 환경변수
-- OPENAI_API_KEY              : OpenAI API 키
-- BANNER_LLM_MODEL            : (선택) 기본값 "gpt-4o-mini"
-- BUS_SHELTER_MODEL           : (선택) 기본값 "bytedance/seedream-4"
-- BUS_SHELTER_SAVE_DIR        : (선택, 직접 create_bus_shelter 를 쓸 때용)
-    * 절대경로면 그대로 사용
-    * 상대경로면 acc-ai 프로젝트 루트 기준
-    * 미설정 시 PROJECT_ROOT/app/data/bus_shelter 사용
+결과 JSON 형태 (editor용 최소 정보):
 
-CLI 실행:
-    python make_bus_shelter.py
+{
+  "type": "bus_shelter",
+  "pro_name": "버스 쉘터",
+  "festival_name_ko": "담양산타축제",
+  "festival_subtitle_ko": "한 20자 이상으로\\n줄개행 하나 있게",
+  "width": 1024,
+  "height": 1906
+}
+
+※ festival_subtitle_ko 는 축제명/기간/장소를 참고해 LLM이 만든 한국어 카피이며,
+   두 줄의 문장으로, 문자열 안에는 정확히 한 번의 줄바꿈 문자('\\n')가 포함된다.
+
+전제 환경변수
+- OPENAI_API_KEY             : OpenAI API 키
+- BANNER_LLM_MODEL           : (선택) 배너/버스용 LLM, 기본값 "gpt-4o-mini"
+- BUS_SHELTER_MODEL          : (선택) 기본값 "bytedance/seedream-4"
+- BUS_SHELTER_SAVE_DIR       : (선택) 직접 create_bus_shelter 를 쓸 때 저장 경로
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
-import json
-from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict
@@ -45,12 +50,18 @@ from dotenv import load_dotenv
 from replicate.exceptions import ModelError
 
 # -------------------------------------------------------------
-# 프로젝트 루트 및 DATA_ROOT, .env 로딩 + sys.path 설정
+# 프로젝트 루트 및 .env 로딩 + sys.path 설정
 # -------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_ROOT = PROJECT_ROOT / "app" / "data"
 
-# .env 로딩 (예: C:\final_project\ACC\acc-ai\.env)
+# 버스 쉘터 고정 스펙
+BUS_SHELTER_TYPE = "bus_shelter"
+BUS_SHELTER_PRO_NAME = "버스 쉘터"
+BUS_SHELTER_WIDTH = 1024
+BUS_SHELTER_HEIGHT = 1906
+
+# .env 로딩
 env_path = PROJECT_ROOT / ".env"
 load_dotenv(env_path)
 
@@ -59,9 +70,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 # -------------------------------------------------------------
-# 기존 road_banner 유틸 재사용
+# road_banner 모듈의 공용 유틸 재사용
 # -------------------------------------------------------------
 from app.service.banner_khs.make_road_banner import (  # type: ignore
+    get_openai_client,
     _build_placeholder_from_hangul,
     _translate_festival_ko_to_en,
     _build_scene_phrase_from_poster,
@@ -70,25 +82,120 @@ from app.service.banner_khs.make_road_banner import (  # type: ignore
     _download_image_bytes,
 )
 
-# 폰트/색상 추천 모듈 (버스/쉘터 전용)
-from app.service.font_color.bus_font_color_recommend import (  # type: ignore
-    recommend_fonts_and_colors_for_bus,
-)
+# -------------------------------------------------------------
+# 1) 한국어 서브 타이틀 생성 (festival_subtitle_ko)
+# -------------------------------------------------------------
+def _build_bus_shelter_subtitle_ko(
+    festival_name_ko: str,
+    festival_period_ko: str,
+    festival_location_ko: str,
+) -> str:
+    """
+    축제명/기간/장소를 기반으로 버스 쉘터 광고용 한국어 서브 타이틀 문구를 생성한다.
+
+    요구 조건(의도):
+    - 한국어 문장 2줄
+    - 문자열 안에 정확히 한 번의 줄바꿈 문자('\\n') 포함
+    - 전체 글자 수는 대략 20자 이상 (엄격 검증은 하지 않음)
+    - 이모지, 해시태그, 따옴표, 과도한 특수문자 사용 금지
+    - 축제 성격/분위기를 설명하는 짧은 홍보 카피
+
+    LLM 호출이 실패하면 빈 문자열("")을 반환한다.
+    """
+
+    client = get_openai_client()
+    model_name = os.getenv("BANNER_LLM_MODEL", "gpt-4o-mini")
+
+    system_msg = (
+        "너는 한국 축제 포스터와 옥외 광고를 위한 카피라이터다. "
+        "입력으로 주어지는 축제명, 기간, 장소 정보를 참고해서 "
+        "관람객에게 매력적으로 들리는 짧은 한국어 홍보 문구를 만든다. "
+        "결과는 두 줄의 문장으로, 문자열 안에 줄바꿈 문자('\\n')가 정확히 한 번만 들어가도록 구성해라. "
+        "각 줄은 자연스러운 문장이어야 하며, 이모지, 해시태그, 따옴표, 특수문자는 사용하지 마라."
+    )
+
+    user_payload = {
+        "festival_name_ko": festival_name_ko or "",
+        "festival_period_ko": festival_period_ko or "",
+        "festival_location_ko": festival_location_ko or "",
+    }
+
+    try:
+        resp = client.chat.completions.create(
+            model=model_name,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_msg},
+                {
+                    "role": "user",
+                    "content": (
+                        "다음 축제 정보를 참고해서 버스 쉘터 광고에 들어갈 한국어 서브 타이틀을 만들어줘.\n"
+                        "- 형식: 두 줄짜리 한국어 문장, 문자열 안에는 줄바꿈 문자('\\n')가 정확히 한 번 포함되어야 한다.\n"
+                        "- 길이: 전체 글자 수는 대략 20자 이상이 되도록.\n"
+                        "- 말투: 명료하고 긍정적인 홍보 카피.\n"
+                        "- 따옴표(\"\',「」 등), 이모지, 해시태그, 특수문자는 사용하지 마.\n\n"
+                        'JSON 객체 하나만 반환해. 키는 "festival_subtitle_ko" 하나만 사용해.\n\n'
+                        + json.dumps(user_payload, ensure_ascii=False)
+                    ),
+                },
+            ],
+            temperature=0.8,
+        )
+
+        data = json.loads(resp.choices[0].message.content or "{}")
+        subtitle = str(data.get("festival_subtitle_ko", "")).strip()
+    except Exception as e:
+        print(f"[make_bus_shelter._build_bus_shelter_subtitle_ko] failed: {e}")
+        return ""
+
+    # 줄바꿈/공백 정리
+    subtitle = subtitle.replace("\r", "")
+    # 첫 줄바꿈만 유지
+    if "\n" in subtitle:
+        first, rest = subtitle.split("\n", 1)
+        subtitle = first.strip() + "\n" + rest.strip()
+    else:
+        # 줄바꿈이 없다면 가운데 근처에서 인위적으로 하나 넣어 준다.
+        text = subtitle.strip()
+        if not text:
+            return ""
+        mid = len(text) // 2
+        split_idx = mid
+        # 공백 기준으로 나누면 더 자연스럽게 보일 수 있음
+        for offset in range(len(text)):
+            i1 = mid - offset
+            i2 = mid + offset
+            if i1 >= 0 and text[i1] == " ":
+                split_idx = i1
+                break
+            if i2 < len(text) and text[i2] == " ":
+                split_idx = i2
+                break
+        left = text[:split_idx].strip()
+        right = text[split_idx:].strip()
+        subtitle = left + "\n" + right
+
+        subtitle = subtitle.strip("\n")
+
+    return subtitle
 
 
 # -------------------------------------------------------------
-# 1) 영어 씬 묘사 + 플레이스홀더 텍스트 → 버스쉘터 프롬프트
+# 2) 버스 쉘터 프롬프트 조립 (세로 포스터 + 제목/서브타이틀)
 # -------------------------------------------------------------
 def _build_bus_shelter_prompt_en(
-    name_text: str,
-    period_text: str,
-    location_text: str,
+    subtitle_text: str,
+    festival_name_text: str,
     base_scene_en: str,
     details_phrase_en: str,
 ) -> str:
     """
-    1:1.8 비율 세로형 버스쉘터 광고용 영어 프롬프트 생성.
-    버스 정류장 유리 패널에 붙는 세로 포스터 느낌으로 설계.
+    버스쉘터(세로 포스터)용 Seedream 영어 프롬프트 생성.
+
+    - 중앙(또는 중앙보다 아주 살짝 위)에 '서브타이틀'이 가장 크게 들어가고
+    - 축제명은 위/아래 중 한쪽에 상대적으로 작게 배치되는 구조.
+    - 버스쉘터 구조물(유리, 기둥 등)은 그리지 않고 순수 포스터 이미지만 생성.
+    - 캔버스 가장자리에 흰색 테두리 / 여백 / 종이 프레임이 나오지 않도록 강하게 금지.
     """
 
     def _norm(s: str) -> str:
@@ -96,43 +203,55 @@ def _build_bus_shelter_prompt_en(
 
     base_scene_en = _norm(base_scene_en)
     details_phrase_en = _norm(details_phrase_en)
-    name_text = _norm(name_text)
-    period_text = _norm(period_text)
-    location_text = _norm(location_text)
+    subtitle_text = _norm(subtitle_text)
+    festival_name_text = _norm(festival_name_text)
 
     prompt = (
-        f"Tall vertical festival illustration of {base_scene_en}, "
-        "designed as the main poster artwork for a bus shelter advertising panel, "
-        "but do not draw any actual bus shelter, frame, glass, or mounting structure. "
-        "Fill the entire canvas edge to edge with the scene, "
-        "with no black bars, frames, borders, or letterbox areas at the top or bottom. "
-        "Use the attached poster image only as reference for bright colors, lighting and atmosphere, "
-        f"but create a completely new scene with {details_phrase_en}. "
+        # 전체 장면
+        f"Tall vertical festival poster illustration themed around {base_scene_en}, "
+        "using the attached poster image only as reference for overall color palette, lighting, and visual mood, "
+        "but creating a completely new composition as a clean printable poster artwork. "
+        "Do not draw any bus shelter, frame, glass, street, floor, people, or vehicles; "
+        "create only a flat rectangular illustration that could be printed and mounted by itself. "
+        "The artwork must extend all the way to the edges of the canvas, with NO white borders, margins, paper edges, "
+        "frames, outlines, or empty edge strips; the background colors and illustration must reach every edge of the image. "
 
-        "Place three lines of text around the central vertical area, all perfectly center-aligned horizontally. "
-        f"On the middle line, write \"{name_text}\" in extremely large, ultra-bold sans-serif letters, "
-        "the largest text in the entire image and clearly readable from a long distance across the street. "
-        f"On the top line, directly above the title, write \"{period_text}\" in smaller bold sans-serif letters, "
-        "but still clearly readable from far away. "
-        f"On the bottom line, directly below the title, write \"{location_text}\" in a size slightly smaller than the top line. "
+        # 중앙 메인 일러스트
+        "In the center area of the artwork, place the PRIMARY FESTIVAL ILLUSTRATION: "
+        f"large, iconic visual elements inspired by {details_phrase_en}, such as rockets, mascots, symbolic objects, "
+        "or thematic scenery. This illustration should occupy the central visual zone and feel like the main attraction "
+        "of the poster, but it must not hide or cut through any text. "
 
-        "All three lines must be drawn in the foremost visual layer, clearly on top of every background element, "
-        "character, object, and effect in the scene, and nothing may overlap, cover, or cut through any part of the letters. "
-        "Draw exactly these three lines of text once each. Do not draw any second copy, shadow copy, reflection, "
-        "mirrored copy, outline-only copy, blurred copy, or partial copy of any of this text anywhere else in the image, "
-        "including on the ground, sky, water, buildings, decorations, or interface elements. "
-        "Do not add any other text at all: no extra words, labels, dates, numbers, logos, watermarks, UI elements, "
-        "or any small text in the corners, such as aspect ratio labels or the words 'Poster', 'BusShelter', or model names. "
-        "Do not place the text on any banner, signboard, panel, box, frame, ribbon, or physical board; "
-        "draw only clean floating letters directly over the background. "
-        "The quotation marks in this prompt are for instruction only; do not draw quotation marks in the final image."
+        # 서브타이틀: 화면 중앙 근처, 가장 큰 텍스트
+        "Place the SUBTITLE line at the visual center of the canvas, or only a very small distance above the geometric center. "
+        "It must not sit near the top edge of the poster. "
+        "Treat the SUBTITLE as the MAIN TITLE of the poster. "
+        f"Write \"{subtitle_text}\" as the largest text element in the whole image, clearly larger than the festival name text, "
+        "in extremely large, bold, clean sans-serif letters, with comfortable empty margin above and below it. "
+
+        # 축제명: 위/아래 한쪽에 조금 더 작게
+        "Place the FESTIVAL NAME line near either the upper third or lower third of the poster, "
+        "clearly separated from the subtitle so that the subtitle remains the visual focus. "
+        f"Write \"{festival_name_text}\" in medium-large bold letters that are noticeably smaller than the subtitle letters. "
+
+        # 텍스트 공통 규칙
+        "All text must float cleanly above the illustration without any objects touching, overlapping, or cutting through the letters. "
+        "Draw each quoted string exactly once and do not add any other text, numbers, labels, slogans, watermarks, or UI elements. "
+        "Do not create shadows, reflections, outlines, duplicates, or secondary copies of the text anywhere else. "
+
+        # 배너/박스 금지
+        "Do not place the text inside any box, banner, ribbon, signboard, frame, or physical container; "
+        "draw only clean floating letters directly over the artwork. "
+
+        "Do not draw quotation marks."
     )
 
     return prompt.strip()
 
 
+
 # -------------------------------------------------------------
-# 2) write_bus_shelter: Seedream 입력 JSON 생성 (+ 플레이스홀더 포함)
+# 3) write_bus_shelter: Seedream 입력 JSON 생성
 # -------------------------------------------------------------
 def write_bus_shelter(
     poster_image_url: str,
@@ -141,37 +260,40 @@ def write_bus_shelter(
     festival_location_ko: str,
 ) -> Dict[str, Any]:
     """
-    버스쉘터 광고(1:1.8, 2048x3811) Seedream 입력 JSON을 생성한다.
+    버스 쉘터(1024x1906) 세로 광고판용 Seedream 입력 JSON을 생성한다.
     """
 
-    # 1) 한글 축제 정보 → 영어 번역 (씬 묘사용)
-    translated = _translate_festival_ko_to_en(
+    # 1) 한국어 서브타이틀 생성
+    festival_subtitle_ko = _build_bus_shelter_subtitle_ko(
         festival_name_ko=festival_name_ko,
         festival_period_ko=festival_period_ko,
         festival_location_ko=festival_location_ko,
     )
 
+    # 2) 한글 축제 정보 → 영어 번역 (씬 묘사용)
+    translated = _translate_festival_ko_to_en(
+        festival_name_ko=festival_name_ko,
+        festival_period_ko=festival_period_ko,
+        festival_location_ko=festival_location_ko,
+    )
     name_en = translated["name_en"]
     period_en = translated["period_en"]
     location_en = translated["location_en"]
 
-    # 2) 자리수 맞춘 플레이스홀더 + 원본 한글 텍스트 보존
+    # 3) 자리수 맞춘 플레이스홀더 (제목/서브타이틀)
     placeholders: Dict[str, str] = {
         "festival_name_placeholder": _build_placeholder_from_hangul(
             festival_name_ko, "A"
         ),
-        "festival_period_placeholder": _build_placeholder_from_hangul(
-            festival_period_ko, "C"
+        "festival_subtitle_placeholder": _build_placeholder_from_hangul(
+            festival_subtitle_ko, "B"
         ),
-        "festival_location_placeholder": _build_placeholder_from_hangul(
-            festival_location_ko, "B"
-        ),
-        "festival_base_name_placeholder": str(festival_name_ko or ""),
-        "festival_base_period_placeholder": str(festival_period_ko or ""),
-        "festival_base_location_placeholder": str(festival_location_ko or ""),
+        # 원문 백업
+        "festival_base_name_ko_placeholder": str(festival_name_ko or ""),
+        "festival_base_subtitle_ko_placeholder": str(festival_subtitle_ko or ""),
     }
 
-    # 3) 포스터 이미지 분석 → 씬 묘사 얻기
+    # 4) 포스터 이미지 분석 → 씬 묘사 얻기
     scene_info = _build_scene_phrase_from_poster(
         poster_image_url=poster_image_url,
         festival_name_en=name_en,
@@ -179,20 +301,19 @@ def write_bus_shelter(
         festival_location_en=location_en,
     )
 
-    # 4) 최종 프롬프트 조립 (버스쉘터 세로 포스터)
+    # 5) 최종 프롬프트 조립
     prompt = _build_bus_shelter_prompt_en(
-        name_text=placeholders["festival_name_placeholder"],
-        period_text=placeholders["festival_period_placeholder"] or period_en,
-        location_text=placeholders["festival_location_placeholder"],
+        subtitle_text=placeholders["festival_subtitle_placeholder"],
+        festival_name_text=placeholders["festival_name_placeholder"],
         base_scene_en=scene_info["base_scene_en"],
         details_phrase_en=scene_info["details_phrase_en"],
     )
 
-    # 5) Seedream / Replicate 입력 JSON 구성
+    # 6) Seedream / Replicate 입력 JSON 구성
     seedream_input: Dict[str, Any] = {
         "size": "custom",
-        "width": 2048,
-        "height": 3811,
+        "width": BUS_SHELTER_WIDTH,
+        "height": BUS_SHELTER_HEIGHT,
         "prompt": prompt,
         "max_images": 1,
         "aspect_ratio": "match_input_image",
@@ -204,6 +325,9 @@ def write_bus_shelter(
                 "url": poster_image_url,
             }
         ],
+        # 결과 조립용으로 필요한 원본 정보도 같이 넣어둔다
+        "festival_name_ko": festival_name_ko,
+        "festival_subtitle_ko": festival_subtitle_ko,
     }
 
     seedream_input.update(placeholders)
@@ -211,7 +335,7 @@ def write_bus_shelter(
 
 
 # -------------------------------------------------------------
-# 3) 버스쉘터 저장 디렉터리 결정
+# 4) 버스 쉘터 저장 디렉터리 결정
 # -------------------------------------------------------------
 def _get_bus_shelter_save_dir() -> Path:
     """
@@ -220,9 +344,6 @@ def _get_bus_shelter_save_dir() -> Path:
       - 상대경로면 PROJECT_ROOT 기준으로 사용
     없으면:
       - PROJECT_ROOT/app/data/bus_shelter 사용
-
-    run_bus_shelter_to_editor(...) 에서는 이 경로를 사용하지 않고,
-    곧바로 editor/<run_id>/before_image 에 저장한다.
     """
     env_dir = os.getenv("BUS_SHELTER_SAVE_DIR")
     if env_dir:
@@ -234,43 +355,25 @@ def _get_bus_shelter_save_dir() -> Path:
 
 
 # -------------------------------------------------------------
-# 4) create_bus_shelter: Seedream JSON → Replicate 호출 → 이미지 저장
-#     + 플레이스홀더까지 같이 반환
+# 5) create_bus_shelter: Seedream JSON → Replicate 호출 → 이미지 저장
 # -------------------------------------------------------------
 def create_bus_shelter(
     seedream_input: Dict[str, Any],
     save_dir: Path | None = None,
+    prefix: str = "bus_shelter_",
 ) -> Dict[str, Any]:
     """
     write_bus_shelter(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
     1) image_input 에서 포스터 URL/경로를 추출하고,
     2) 그 이미지를 다운로드(또는 로컬 파일 읽기)해 파일 객체로 만든 뒤,
-    3) Replicate(bytedance/seedream-4)에 prompt + image_input과 함께 전달해
-       실제 1:1.8 비율의 버스쉘터 세로 포스터 이미지를 생성하고,
+    3) Replicate(bytedance/seedream-4 또는 BUS_SHELTER_MODEL)에
+       prompt + image_input과 함께 전달해
+       실제 1024x1906 버스 쉘터용 광고 이미지를 생성하고,
     4) 생성된 이미지를 로컬에 저장한다.
 
     save_dir 가 주어지면 해당 디렉터리에 바로 저장하고,
-    None 이면 BUS_SHELTER_SAVE_DIR / bus_shelter 기본 경로를 사용한다.
+    None 이면 BUS_SHELTER_SAVE_DIR / app/data/bus_shelter 기본 경로를 사용한다.
     """
-
-    # 입력 JSON에서 플레이스홀더 + 원본 한글 그대로 꺼냄
-    festival_name_placeholder = str(seedream_input.get("festival_name_placeholder", ""))
-    festival_period_placeholder = str(
-        seedream_input.get("festival_period_placeholder", "")
-    )
-    festival_location_placeholder = str(
-        seedream_input.get("festival_location_placeholder", "")
-    )
-
-    festival_base_name_placeholder = str(
-        seedream_input.get("festival_base_name_placeholder", "")
-    )
-    festival_base_period_placeholder = str(
-        seedream_input.get("festival_base_period_placeholder", "")
-    )
-    festival_base_location_placeholder = str(
-        seedream_input.get("festival_base_location_placeholder", "")
-    )
 
     # 1) 포스터 URL/경로 추출
     poster_url = _extract_poster_url_from_input(seedream_input)
@@ -286,8 +389,8 @@ def create_bus_shelter(
     # 3) Replicate에 넘길 input 구성
     prompt = seedream_input.get("prompt", "")
     size = seedream_input.get("size", "custom")
-    width = int(seedream_input.get("width", 2048))
-    height = int(seedream_input.get("height", 3811))
+    width = int(seedream_input.get("width", BUS_SHELTER_WIDTH))
+    height = int(seedream_input.get("height", BUS_SHELTER_HEIGHT))
     max_images = int(seedream_input.get("max_images", 1))
     aspect_ratio = seedream_input.get("aspect_ratio", "match_input_image")
     enhance_prompt = bool(seedream_input.get("enhance_prompt", True))
@@ -319,25 +422,21 @@ def create_bus_shelter(
             break  # 성공하면 루프 탈출
         except ModelError as e:
             msg = str(e)
-            # Prediction interrupted; please retry (code: PA) 같은 일시 오류만 재시도
             if "Prediction interrupted" in msg or "code: PA" in msg:
                 last_err = e
                 time.sleep(1.0)
                 continue
-            # 그 외 ModelError는 그대로 넘김
             raise RuntimeError(
-                f"Seedream model error during bus_shelter banner generation: {e}"
+                f"Seedream model error during bus shelter banner generation: {e}"
             )
         except Exception as e:
-            # 네트워크 등 다른 예외는 바로 실패
             raise RuntimeError(
-                f"Unexpected error during bus_shelter banner generation: {e}"
+                f"Unexpected error during bus shelter banner generation: {e}"
             )
 
-    # 3번 모두 실패한 경우
     if output is None:
         raise RuntimeError(
-            f"Seedream model error during bus_shelter banner generation after retries: {last_err}"
+            f"Seedream model error during bus shelter banner generation after retries: {last_err}"
         )
 
     if not (isinstance(output, (list, tuple)) and output):
@@ -353,10 +452,9 @@ def create_bus_shelter(
     save_base.mkdir(parents=True, exist_ok=True)
 
     image_path, image_filename = _save_image_from_file_output(
-        file_output, save_base, prefix="bus_shelter_"
+        file_output, save_base, prefix=prefix
     )
 
-    # 플레이스홀더 + 원본 한글까지 같이 반환 + size/width/height 포함
     return {
         "size": size,
         "width": width,
@@ -364,17 +462,13 @@ def create_bus_shelter(
         "image_path": image_path,
         "image_filename": image_filename,
         "prompt": prompt,
-        "festival_name_placeholder": festival_name_placeholder,
-        "festival_period_placeholder": festival_period_placeholder,
-        "festival_location_placeholder": festival_location_placeholder,
-        "festival_base_name_placeholder": festival_base_name_placeholder,
-        "festival_base_period_placeholder": festival_base_period_placeholder,
-        "festival_base_location_placeholder": festival_base_location_placeholder,
+        "festival_name_ko": str(seedream_input.get("festival_name_ko", "")),
+        "festival_subtitle_ko": str(seedream_input.get("festival_subtitle_ko", "")),
     }
 
 
 # -------------------------------------------------------------
-# 5) editor 저장용 헬퍼 (run_id 기준)
+# 6) editor 저장용 헬퍼 (run_id 기준)
 # -------------------------------------------------------------
 def run_bus_shelter_to_editor(
     run_id: int,
@@ -392,16 +486,23 @@ def run_bus_shelter_to_editor(
         festival_location_ko
 
     동작:
-      1) write_bus_shelter(...) 로 seedream_input 생성
-      2) editor/<run_id>/before_data, before_image 디렉터리 생성
-      3) create_bus_shelter(..., save_dir=before_image_dir) 로
-         실제 배너 이미지를 생성하고, 곧바로
-         app/data/editor/<run_id>/before_image 에 저장
-      4) recommend_fonts_and_colors_for_bus(...) 로 폰트/색상 추천
-      5) 결과 JSON 을 app/data/editor/<run_id>/before_data 아래에 저장
+      1) write_bus_shelter(...) 로 Seedream 입력용 seedream_input 생성
+      2) create_bus_shelter(..., save_dir=before_image_dir) 로
+         실제 버스 쉘터용 광고 이미지를 생성하고,
+         app/data/editor/<run_id>/before_image/bus_shelter.png 로 저장한다.
+      3) 타입, 한글 축제명, LLM이 생성한 한국어 서브타이틀, 배너 크기만을 포함한
+         최소 결과 JSON을 구성하여
+         app/data/editor/<run_id>/before_data/bus_shelter.json 에 저장한다.
 
-    반환:
-        editor에 저장된 경로까지 포함한 결과 dict
+    반환(예시):
+      {
+        "type": "bus_shelter",
+        "pro_name": "버스 쉘터",
+        "festival_name_ko": "담양산타축제",
+        "festival_subtitle_ko": "한 20자 이상으로\\n줄개행 하나 있게",
+        "width": 1024,
+        "height": 1906
+      }
     """
 
     # 1) Seedream 입력 생성
@@ -419,79 +520,29 @@ def run_bus_shelter_to_editor(
     before_data_dir.mkdir(parents=True, exist_ok=True)
     before_image_dir.mkdir(parents=True, exist_ok=True)
 
-    # 3) 실제 배너 이미지 생성 (바로 before_image 에 저장)
+    # 3) 실제 이미지 생성 (저장 위치를 before_image_dir 로 직접 지정)
     create_result = create_bus_shelter(
         seedream_input,
         save_dir=before_image_dir,
+        prefix="bus_shelter_",
     )
 
-    # 4) 폰트/색상 추천 (bus_type 으로 bus_shelter 전달)
-    font_color_result = recommend_fonts_and_colors_for_bus(
-        bus_type="bus_shelter",
-        image_path=create_result["image_path"],
-        festival_name_placeholder=create_result["festival_name_placeholder"],
-        festival_period_placeholder=create_result["festival_period_placeholder"],
-        festival_location_placeholder=create_result["festival_location_placeholder"],
-        festival_base_name_placeholder=create_result[
-            "festival_base_name_placeholder"
-        ],
-        festival_base_period_placeholder=create_result[
-            "festival_base_period_placeholder"
-        ],
-        festival_base_location_placeholder=create_result[
-            "festival_base_location_placeholder"
-        ],
-    )
-
-    original_image_path = create_result.get("image_path") or ""
-
-    # 5) 결과 dict 구성
+    # 4) 최종 결과 JSON (API/백엔드에서 사용할 최소 정보 형태)
     result: Dict[str, Any] = {
-        "run_id": int(run_id),
-        "status": "success",
-        "type": "bus_shelter",
-        "poster_image_url": poster_image_url,
-        "festival_name_ko": festival_name_ko,
-        "festival_period_ko": festival_period_ko,
-        "festival_location_ko": festival_location_ko,
-        **create_result,
-        **font_color_result,
-        "generated_image_path": original_image_path,
+        "type": BUS_SHELTER_TYPE,
+        "pro_name": BUS_SHELTER_PRO_NAME,
+        "festival_name_ko": create_result["festival_name_ko"],
+        "festival_subtitle_ko": create_result["festival_subtitle_ko"],
+        "width": int(create_result.get("width", BUS_SHELTER_WIDTH)),
+        "height": int(create_result.get("height", BUS_SHELTER_HEIGHT)),
     }
 
-    if original_image_path:
-        result["image_path"] = original_image_path
-        result["editor_image_path"] = original_image_path
-    else:
-        result["status"] = "warning"
-        result["image_copy_error"] = "generated image path is empty"
-
-    # 6) before_data 밑에 JSON 저장
-    image_filename = result.get("image_filename") or ""
-    if image_filename:
-        stem = Path(image_filename).stem  # bus_shelter_... → bus_shelter_....json
-        json_name = f"{stem}.json"
-    else:
-        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        json_name = f"bus_shelter_{ts}.json"
-
-    json_path = before_data_dir / json_name
+    # 5) before_data 밑에 JSON 저장 (파일명 고정)
+    json_path = before_data_dir / "bus_shelter.json"
     with json_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
-    result["editor_json_path"] = str(json_path.resolve())
-
     return result
-
-
-# -------------------------------------------------------------
-# 6) 프로젝트 루트 헬퍼 (필요하면 사용)
-# -------------------------------------------------------------
-def _get_project_root() -> Path:
-    """
-    acc-ai 루트 디렉터리를 반환한다.
-    """
-    return PROJECT_ROOT
 
 
 # -------------------------------------------------------------
@@ -502,27 +553,24 @@ def main() -> None:
     CLI 실행용 진입점.
 
     ✅ 콘솔에서:
-        python make_bus_shelter.py
+        python app/service/bus/make_bus_shelter.py
 
     를 실행하면, 아래에 적어둔 입력값으로
-    - 버스쉘터 Seedream 입력 생성
-    - Seedream 호출로 실제 이미지 생성
-    - 폰트/색상 추천
+    - 버스 쉘터 세로 광고 이미지 생성 (Seedream)
     - app/data/editor/<run_id>/before_data, before_image 저장
     까지 한 번에 수행한다.
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 4  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+    run_id = 9  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
-    # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
-    poster_image_url = str(DATA_ROOT / "banner" / "busan.png")
-    festival_name_ko = "제12회 해운대 빛축제"
-    festival_period_ko = "2025.11.29 ~ 2026.01.18"
-    festival_location_ko = "해운대해수욕장 구남로 일원"
+    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\goheung.png"
+    festival_name_ko = "제 15회 고흥 우주항공 축제"
+    festival_period_ko = "2025.05.03 ~ 2025.05.06"
+    festival_location_ko = "고흥군 봉래면 나로우주센터 일원"
 
-    # 2) 혹시라도 비어 있으면 바로 알려주기
-    missing: list[str] = []
+    # 2) 필수값 체크
+    missing = []
     if not poster_image_url:
         missing.append("poster_image_url")
     if not festival_name_ko:
@@ -547,21 +595,18 @@ def main() -> None:
         festival_location_ko=festival_location_ko,
     )
 
-    print("✅ bus_shelter 배너 생성 + 폰트/색상 추천 + editor 저장 완료")
-    print("  run_id            :", result.get("run_id"))
-    print("  type              :", result.get("type"))
-    print("  editor_json_path  :", result.get("editor_json_path"))
-    print(
-        "  editor_image_path :",
-        result.get("editor_image_path", result.get("image_path")),
-    )
-    print("  generated_image_path :", result.get("generated_image_path"))
-    print("  font_name         :", result.get("festival_font_name_placeholder"))
-    print("  font_period       :", result.get("festival_font_period_placeholder"))
-    print("  font_location     :", result.get("festival_font_location_placeholder"))
-    print("  color_name        :", result.get("festival_color_name_placeholder"))
-    print("  color_period      :", result.get("festival_color_period_placeholder"))
-    print("  color_location    :", result.get("festival_color_location_placeholder"))
+    editor_root = DATA_ROOT / "editor" / str(run_id)
+    json_path = editor_root / "before_data" / "bus_shelter.json"
+    image_path = editor_root / "before_image" / "bus_shelter.png"
+
+    print("✅ bus shelter banner 생성 + editor 저장 완료")
+    print("  type                 :", result.get("type"))
+    print("  pro_name             :", result.get("pro_name"))
+    print("  festival_name_ko     :", result.get("festival_name_ko"))
+    print("  festival_subtitle_ko :", result.get("festival_subtitle_ko"))
+    print("  width x height       :", result.get("width"), "x", result.get("height"))
+    print("  json_path            :", json_path)
+    print("  image_path           :", image_path)
 
 
 if __name__ == "__main__":
