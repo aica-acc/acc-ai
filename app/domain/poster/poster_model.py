@@ -59,3 +59,4 @@ class CreateImageRequest(BaseModel):
     # 단일 객체 -> 리스트 형태로 변경 (4개 한 번에 받음)
     prompt_options: List[SelectedPromptData]
     analysis_summary: Dict[str, Any]
+    image_url: Optional[str] = None

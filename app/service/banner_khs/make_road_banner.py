@@ -25,8 +25,7 @@ import time
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict
-
+from typing import Any, Dict, List
 import requests
 import replicate
 from openai import OpenAI

@@ -25,6 +25,6 @@ wheels/
 *.ttc
 *.otf
 *.woff
-
+*.mp4
 # test 코드
 __init__.py
