@@ -1,33 +1,33 @@
 # -*- coding: utf-8 -*-
 """
-app/service/sign/make_sign_parking.py
+app/service/goods/make_goods_emoticon.py
 
-축제 주차장 입간판 표지용(세로형 1024x1862) Seedream 모듈.
+축제 마스코트 이모티콘 굿즈(정사각형 2048x2048)용 Seedream 모듈.
 
 역할
 - 참고용 마스코트 이미지(URL 또는 로컬 파일 경로)와 축제 정보(한글)를 입력받아서
   1) OpenAI LLM으로 축제명/기간/장소를 영어로 번역하고
   2) 마스코트 이미지를 시각적으로 분석해서 축제 테마/무드 정보를 영어로 만든 뒤
-  3) 축제명/테마를 이용해 세로형 주차장 입간판용 프롬프트를 조립한다. (write_sign_parking)
-  4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 한 번 생성하고 저장한다. (create_sign_parking)
-  5) run_sign_parking_to_editor(...) 로 p_no 기준 acc-front/public/data/promotion 경로에
+  3) 축제명/테마를 이용해 "여러 상황에서 쓸 수 있는 마스코트 이모티콘 세트" 프롬프트를 조립한다. (write_goods_emoticon)
+  4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 한 번 생성하고 저장한다. (create_goods_emoticon)
+  5) run_goods_emoticon_to_editor(...) 로 p_no 기준 acc-front/public/data/promotion 경로에
      생성 이미지를 저장하고, DB 저장용 메타 정보를 반환한다.
-  6) python make_sign_parking.py 로 단독 실행할 수 있다.
+  6) python make_goods_emoticon.py 로 단독 실행할 수 있다.
 
 DB 저장용 리턴 예시:
 
 {
-  "db_file_type": "sign_parking",
+  "db_file_type": "goods_emoticon",
   "type": "image",
-  "db_file_path": "C:\\final_project\\ACC\\acc-front\\public\\data\\promotion\\M000001\\P000001\\sign\\sign_parking.png",
-  "type_ko": "주차장 표지판"
+  "db_file_path": "C:\\final_project\\ACC\\acc-front\\public\\data\\promotion\\M000001\\P000001\\goods\\emoticon\\goods_emoticon.png",
+  "type_ko": "이모티콘 굿즈"
 }
 
 전제 환경변수
 - OPENAI_API_KEY             : OpenAI API 키 (banner_khs.make_road_banner 내부에서 사용)
-- BANNER_LLM_MODEL           : (선택) 배너/버스/표지판용 LLM, 기본값 "gpt-4o-mini"
-- SIGN_PARKING_MODEL         : (선택) 기본값 "bytedance/seedream-4"
-- SIGN_PARKING_SAVE_DIR      : (선택) create_sign_parking 단독 사용 시 저장 경로
+- BANNER_LLM_MODEL           : (선택) 배너/버스/표지판/굿즈용 LLM, 기본값 "gpt-4o-mini"
+- GOODS_EMOTICON_MODEL       : (선택) 기본값 "bytedance/seedream-4"
+- GOODS_EMOTICON_SAVE_DIR    : (선택) create_goods_emoticon 단독 사용 시 저장 경로
 - ACC_MEMBER_NO              : (선택) 프로모션 파일 경로용 회원번호, 기본값 "M000001"
 """
 
@@ -51,11 +51,11 @@ from replicate.exceptions import ModelError
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_ROOT = PROJECT_ROOT / "app" / "data"
 
-# 주차장 입간판 고정 스펙
-SIGN_PARKING_TYPE = "sign_parking"
-SIGN_PARKING_PRO_NAME = "주차장 표지판"
-SIGN_PARKING_WIDTH = 1024
-SIGN_PARKING_HEIGHT = 1862
+# 이모티콘 굿즈 고정 스펙 (정사각형 2048 x 2048)
+GOODS_EMOTICON_TYPE = "goods_emoticon"
+GOODS_EMOTICON_PRO_NAME = "이모티콘 굿즈"
+GOODS_EMOTICON_WIDTH = 2048
+GOODS_EMOTICON_HEIGHT = 2048
 
 env_path = PROJECT_ROOT / ".env"
 load_dotenv(env_path)
@@ -110,70 +110,62 @@ def _norm(s: str) -> str:
 
 
 # -------------------------------------------------------------
-# 3) 주차장 입간판 프롬프트 조립
+# 3) 이모티콘 굿즈 프롬프트 조립 (정사각형)
 # -------------------------------------------------------------
-def _build_sign_parking_prompt_en(
+def _build_goods_emoticon_prompt_en(
     festival_name_en: str,
     base_scene_en: str,
     details_phrase_en: str,
 ) -> str:
-    """
-    세로형 축제 주차 안내 일러스트용 Seedream 프롬프트.
-
-    기본 아이디어:
-    - 마스코트/포스터 분위기/색감을 가져와서
-    - 세로형 "PARKING + 오른쪽 화살표" 안내판 일러스트를 만든다.
-    """
-
-    base_scene_en = _norm(base_scene_en)
-    details_phrase_en = _norm(details_phrase_en)
+    # 축제 정보는 분위기만 살짝 참고용
+    scene_phrase_en = _norm(f"{base_scene_en} {details_phrase_en}")
+    _ = _norm(festival_name_en)
 
     prompt = (
-        # 0. 참고 이미지 텍스트 무시 + 축제 분위기만 사용
-        "Create a tall vertical festival parking illustration. "
-        "Ignore all text, letters, and numbers in the attached image. "
-        "Use only its colours, shapes, and the festive mood described as "
-        f"{base_scene_en}, {details_phrase_en}. "
-
-        # 1. PARKING 텍스트 – 좌우 꽉 차게, 진한 색
-        "In the central area, write the word \"PARKING\" in ALL CAPITAL letters, on one horizontal line. "
-        "Center it horizontally and make it very bold and thick, using a dark, high-contrast colour. "
-        "Let the word stretch almost from the left edge to the right edge, with a small safe margin. "
-        "Do NOT rotate the word, do NOT stack the letters vertically, and do NOT curve or distort the text. "
-        "Do not use a light grey or faint colour for this word. "
-
-        # 2. 오른쪽 화살표 – 하나만, 화면 가로를 거의 채우게 + 텍스트와 비겹침
-        "Place exactly one large bold horizontal arrow pointing to the RIGHT (→) near the word \"PARKING\". "
-        "Make the arrow long and wide so that its body stretches almost from the left edge to the right edge of the sign, "
-        "leaving only small safe margins at both ends. "
-        "The arrow should be a solid filled shape with a very thick body, not just an outline. "
-        "Use a dark, high-contrast colour similar to, or slightly brighter than, the PARKING text. "
-        "Position the arrow so that it clearly reads together with the word \"PARKING\" as a single parking sign, "
-        "for example directly above, directly below, or directly to the right of the word. "
-        "Do NOT overlap or cover any part of the word \"PARKING\" with the arrow; "
-        "keep a clear empty gap between the text and the arrow so that both shapes stay fully visible and separate. "
-        "Do not draw any arrows pointing up, down, or left, and do not draw more than one arrow. "
+        "Digital chat emoticon set of a single mascot character for use in a messaging app. "
+        "Draw exactly twelve separate emoticons on a plain light background, arranged in a simple grid. "
+        "Every emoticon must include the same mascot as the main character, with a clearly different emotion or situation. "
+        "Use only facial expressions, body poses, and small graphic symbols such as hearts, question marks, exclamation marks, "
+        "or small z-shaped sleep marks, but do not draw any written text or letters in any language "
+        "(no 'ㅋㅋㅋㅋ', 'ㅠㅠ', 'OK', 'zzzz', etc.). "
+        "Design the twelve emoticons to match these situations: "
+        "1) laughing / very happy, "
+        "2) sad or crying, "
+        "3) angry or annoyed, "
+        "4) surprised or shocked, "
+        "5) sleeping or very sleepy, "
+        "6) confused or wondering, "
+        "7) loving / affectionate, "
+        "8) greeting / saying hello, "
+        "9) thankful / expressing gratitude, "
+        "10) agreeing / saying yes, "
+        "11) proud / showing off confidently, "
+        "12) distracted or daydreaming. "
+        f"You may add small props or subtle effects that fit this festival mood: {scene_phrase_en}, "
+        "but keep the overall style clean, cute, and consistent."
     )
 
     return prompt.strip()
 
 
 
+
+
 # -------------------------------------------------------------
-# 4) write_sign_parking: Seedream 입력 JSON 생성
+# 4) write_goods_emoticon: Seedream 입력 JSON 생성
 # -------------------------------------------------------------
-def write_sign_parking(
+def write_goods_emoticon(
     mascot_image_url: str,
     festival_name_ko: str,
     festival_period_ko: str,
     festival_location_ko: str,
 ) -> Dict[str, Any]:
     """
-    세로형 주차장 입간판(1024x1862)용 Seedream 입력 JSON을 생성한다.
+    정사각형 마스코트 이모티콘 굿즈(2048x2048)용 Seedream 입력 JSON을 생성한다.
 
     - festival_name_ko: "제15회 고흥 우주항공 축제" 또는 "고흥 우주항공 축제" 등
       → 내부에서 회차/축제명을 분리해 영어 축제명 번역에 사용한다.
-      (단, 실제 이미지 안에는 축제명 텍스트를 사용하지 않는다.)
+      (실제 이미지 안 텍스트에는 축제명은 사용하지 않는다.)
     """
 
     # 1) 회차 / 축제명 분리 (회차는 번역 품질 향상을 위한 용도로만 사용)
@@ -190,8 +182,6 @@ def write_sign_parking(
     location_en = translated["location_en"]
 
     # 3) 마스코트(참고 이미지) 분석 → 축제 씬/무드 묘사 얻기
-    #    _build_scene_phrase_from_poster 의 시그니처가 poster_image_url=... 이라서
-    #    mascot_image_url 을 그대로 poster_image_url 에 넘긴다.
     scene_info = _build_scene_phrase_from_poster(
         poster_image_url=mascot_image_url,
         festival_name_en=name_en,
@@ -200,7 +190,7 @@ def write_sign_parking(
     )
 
     # 4) 최종 프롬프트 조립
-    prompt = _build_sign_parking_prompt_en(
+    prompt = _build_goods_emoticon_prompt_en(
         festival_name_en=name_en,
         base_scene_en=scene_info["base_scene_en"],
         details_phrase_en=scene_info["details_phrase_en"],
@@ -209,11 +199,11 @@ def write_sign_parking(
     # 5) Seedream / Replicate 입력 JSON 구성
     seedream_input: Dict[str, Any] = {
         "size": "custom",
-        "width": SIGN_PARKING_WIDTH,
-        "height": SIGN_PARKING_HEIGHT,
+        "width": GOODS_EMOTICON_WIDTH,
+        "height": GOODS_EMOTICON_HEIGHT,
         "prompt": prompt,
         "max_images": 1,
-        "aspect_ratio": "9:16",  # 세로형 비율
+        "aspect_ratio": "1:1",  # 정사각형 비율
         "enhance_prompt": True,
         "sequential_image_generation": "disabled",
         "image_input": [
@@ -233,43 +223,43 @@ def write_sign_parking(
 
 
 # -------------------------------------------------------------
-# 5) 주차장 입간판 저장 디렉터리 결정
+# 5) 이모티콘 굿즈 저장 디렉터리 결정
 # -------------------------------------------------------------
-def _get_sign_parking_save_dir() -> Path:
+def _get_goods_emoticon_save_dir() -> Path:
     """
-    SIGN_PARKING_SAVE_DIR 환경변수가 있으면:
+    GOODS_EMOTICON_SAVE_DIR 환경변수가 있으면:
       - 절대경로면 그대로 사용
       - 상대경로면 PROJECT_ROOT 기준으로 사용
     없으면:
-      - PROJECT_ROOT/app/data/sign_parking 사용
+      - PROJECT_ROOT/app/data/goods_emoticon 사용
     """
-    env_dir = os.getenv("SIGN_PARKING_SAVE_DIR")
+    env_dir = os.getenv("GOODS_EMOTICON_SAVE_DIR")
     if env_dir:
         p = Path(env_dir)
         if not p.is_absolute():
             p = PROJECT_ROOT / p
         return p
-    return DATA_ROOT / "sign_parking"
+    return DATA_ROOT / "goods_emoticon"
 
 
 # -------------------------------------------------------------
-# 6) create_sign_parking: Seedream JSON → Replicate 호출 → 이미지 저장
+# 6) create_goods_emoticon: Seedream JSON → Replicate 호출 → 이미지 저장
 #     (한 번만 생성, LLM 체크 없음)
 # -------------------------------------------------------------
-def create_sign_parking(
+def create_goods_emoticon(
     seedream_input: Dict[str, Any],
     save_dir: Path | None = None,
-    prefix: str = "sign_parking_",
+    prefix: str = "goods_emoticon_",
 ) -> Dict[str, Any]:
     """
-    write_sign_parking(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
+    write_goods_emoticon(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
     1) image_input 의 URL/경로를 이용해 이미지를 다운로드하고,
-    2) Replicate(bytedance/seedream-4 또는 SIGN_PARKING_MODEL)에
-       prompt + image_input과 함께 전달해 실제 세로형 주차장 입간판 이미지를 한 번 생성하고,
+    2) Replicate(bytedance/seedream-4 또는 GOODS_EMOTICON_MODEL)에
+       prompt + image_input과 함께 전달해 실제 정사각형 이모티콘 굿즈 이미지를 한 번 생성하고,
     3) 생성된 이미지를 로컬에 저장한다.
 
     - LLM 비전 검사는 수행하지 않는다.
-    - 최종 저장 파일명은 sign_parking.png 하나만 사용하려고 시도한다.
+    - 최종 저장 파일명은 goods_emoticon.png 하나만 사용하려고 시도한다.
     """
 
     # 1) 참고 이미지 URL/경로 추출
@@ -288,12 +278,12 @@ def create_sign_parking(
     # 3) Replicate에 넘길 공통 input 구성
     prompt = seedream_input.get("prompt", "")
     size = seedream_input.get("size", "custom")
-    width = int(seedream_input.get("width", SIGN_PARKING_WIDTH))
-    height = int(seedream_input.get("height", SIGN_PARKING_HEIGHT))
+    width = int(seedream_input.get("width", GOODS_EMOTICON_WIDTH))
+    height = int(seedream_input.get("height", GOODS_EMOTICON_HEIGHT))
 
     # 최종 생성 이미지는 항상 1장만 요청
     max_images = 1
-    aspect_ratio = seedream_input.get("aspect_ratio", "9:16")
+    aspect_ratio = seedream_input.get("aspect_ratio", "1:1")
     enhance_prompt = bool(seedream_input.get("enhance_prompt", True))
     sequential_image_generation = seedream_input.get(
         "sequential_image_generation", "disabled"
@@ -311,7 +301,7 @@ def create_sign_parking(
         "sequential_image_generation": sequential_image_generation,
     }
 
-    model_name = os.getenv("SIGN_PARKING_MODEL", "bytedance/seedream-4")
+    model_name = os.getenv("GOODS_EMOTICON_MODEL", "bytedance/seedream-4")
 
     output = None
     last_err: Exception | None = None
@@ -328,16 +318,16 @@ def create_sign_parking(
                 time.sleep(1.0)
                 continue
             raise RuntimeError(
-                f"Seedream model error during sign parking generation: {e}"
+                f"Seedream model error during goods emoticon generation: {e}"
             )
         except Exception as e:
             raise RuntimeError(
-                f"Unexpected error during sign parking generation: {e}"
+                f"Unexpected error during goods emoticon generation: {e}"
             )
 
     if output is None:
         raise RuntimeError(
-            f"Seedream model error during sign parking generation after retries: {last_err}"
+            f"Seedream model error during goods emoticon generation after retries: {last_err}."
         )
 
     if not (isinstance(output, (list, tuple)) and output):
@@ -349,7 +339,7 @@ def create_sign_parking(
     if save_dir is not None:
         save_base = Path(save_dir)
     else:
-        save_base = _get_sign_parking_save_dir()
+        save_base = _get_goods_emoticon_save_dir()
     save_base.mkdir(parents=True, exist_ok=True)
 
     # 유틸로 한 번 저장
@@ -358,18 +348,16 @@ def create_sign_parking(
     )
     tmp_path = Path(tmp_image_path)
 
-    # 최종 파일명은 가능한 한 sign_parking.png 로 통일
-    final_filename = "sign_parking.png"
+    # 최종 파일명은 가능한 한 goods_emoticon.png 로 통일
+    final_filename = "goods_emoticon.png"
     final_path = save_base / final_filename
 
-    # 이미 유틸이 sign_parking.png 라는 이름으로 저장했다면 그대로 사용
+    # 이미 유틸이 goods_emoticon.png 라는 이름으로 저장했다면 그대로 사용
     if tmp_path.name != final_filename:
-        # 다른 이름으로 저장된 경우에만 rename
         if final_path.exists():
             final_path.unlink()
         tmp_path.replace(final_path)
     else:
-        # 같은 이름이면 그대로 final_path 로 취급
         final_path = tmp_path
 
     return {
@@ -391,7 +379,7 @@ def create_sign_parking(
 # -------------------------------------------------------------
 # 7) editor → DB 경로용 헬퍼 (p_no 사용)
 # -------------------------------------------------------------
-def run_sign_parking_to_editor(
+def run_goods_emoticon_to_editor(
     p_no: str,
     mascot_image_url: str,
     festival_name_ko: str,
@@ -407,57 +395,58 @@ def run_sign_parking_to_editor(
         festival_location_ko
 
     동작:
-      1) write_sign_parking(...) 로 Seedream 입력용 seedream_input 생성
-      2) create_sign_parking(..., save_dir=표지판 저장 디렉터리) 로
-         실제 주차장 표지 이미지를 생성하고,
-         acc-front/public/data/promotion/<member_no>/<p_no>/sign 아래에 저장한다.
+      1) write_goods_emoticon(...) 로 Seedream 입력용 seedream_input 생성
+      2) create_goods_emoticon(..., save_dir=이모티콘 굿즈 저장 디렉터리) 로
+         실제 이모티콘 굿즈 이미지를 생성하고,
+         acc-front/public/data/promotion/<member_no>/<p_no>/goods/emoticon 아래에 저장한다.
       3) DB 저장용 메타 정보 딕셔너리를 반환한다.
 
     반환:
       {
-        "db_file_type": "sign_parking",
+        "db_file_type": "goods_emoticon",
         "type": "image",
-        "db_file_path": "C:\\...\\acc-front\\public\\data\\promotion\\M000001\\{p_no}\\sign\\sign_parking.png",
-        "type_ko": "주차장 표지판"
+        "db_file_path": "C:\\...\\acc-front\\public\\data\\promotion\\M000001\\{p_no}\\goods\\emoticon\\goods_emoticon.png",
+        "type_ko": "이모티콘 굿즈"
       }
     """
 
     # 1) 프롬프트 생성
-    seedream_input = write_sign_parking(
+    seedream_input = write_goods_emoticon(
         mascot_image_url=mascot_image_url,
         festival_name_ko=festival_name_ko,
         festival_period_ko=festival_period_ko,
         festival_location_ko=festival_location_ko,
     )
 
-    # 2) 저장 디렉터리: acc-front/public/data/promotion/<member_no>/<p_no>/sign
+    # 2) 저장 디렉터리: acc-front/public/data/promotion/<member_no>/<p_no>/goods/emoticon
     member_no = os.getenv("ACC_MEMBER_NO", "M000001")
     front_root = PROJECT_ROOT.parent / "acc-front"
-    sign_dir = (
+    goods_dir = (
         front_root
         / "public"
         / "data"
         / "promotion"
         / member_no
         / str(p_no)
-        / "sign"
+        / "goods"
+        / "emoticon"
     )
-    sign_dir.mkdir(parents=True, exist_ok=True)
+    goods_dir.mkdir(parents=True, exist_ok=True)
 
     # 3) 이미지 생성
-    create_result = create_sign_parking(
+    create_result = create_goods_emoticon(
         seedream_input,
-        save_dir=sign_dir,
-        prefix="sign_parking_",
+        save_dir=goods_dir,
+        prefix="goods_emoticon_",
     )
 
     db_file_path = str(create_result["image_path"])
 
     result: Dict[str, Any] = {
-        "db_file_type": SIGN_PARKING_TYPE,  # "sign_parking"
+        "db_file_type": GOODS_EMOTICON_TYPE,  # "goods_emoticon"
         "type": "image",
         "db_file_path": db_file_path,
-        "type_ko": SIGN_PARKING_PRO_NAME,  # "주차장 표지판"
+        "type_ko": GOODS_EMOTICON_PRO_NAME,  # "이모티콘 굿즈"
     }
 
     return result
@@ -468,12 +457,12 @@ def run_sign_parking_to_editor(
 # -------------------------------------------------------------
 def main() -> None:
     """
-    python app/service/sign/make_sign_parking.py
+    python app/service/goods/make_goods_emoticon.py
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
     p_no = "10"
-
+ 
     mascot_image_url = r"C:\final_project\ACC\acc-ai\app\data\mascot\kimcheon.png"
     festival_name_ko = "2025 김천김밥축제"
     festival_period_ko = "2024.10.25 ~ 2024.10.26"
@@ -499,7 +488,7 @@ def main() -> None:
         return
 
     # 3) 실제 실행 (Dict 리턴)
-    result = run_sign_parking_to_editor(
+    result = run_goods_emoticon_to_editor(
         p_no=p_no,
         mascot_image_url=mascot_image_url,
         festival_name_ko=festival_name_ko,
@@ -507,7 +496,7 @@ def main() -> None:
         festival_location_ko=festival_location_ko,
     )
 
-    # stdout으로는 값 4개만 딱 찍어주기 (로고 일러스트와 동일 포맷)
+    # stdout으로는 값 4개만 딱 찍어주기 (다른 모듈들과 동일 포맷)
     db_file_type = result.get("db_file_type", "")
     type_ = result.get("type", "")
     db_file_path = result.get("db_file_path", "")

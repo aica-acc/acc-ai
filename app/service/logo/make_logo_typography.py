@@ -3,7 +3,7 @@
 app/service/logo/make_logo_typography.py
 
 축제 알파벳 타이포그래피 로고(정사각형 2048x2048)용
-Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + editor 저장 모듈.
+Seedream 입력/프롬프트 생성 + 생성 이미지 저장 모듈.
 
 역할
 - 참고용 포스터 이미지(URL 또는 로컬 파일 경로)와 축제 정보(한글)를 입력받아서
@@ -15,7 +15,8 @@ Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + editor 저장 �
   5) "큰 모노그램 알파벳 + 아래 작은 영어 풀 네임 한 줄" 구조의
      타이포그래피 로고 프롬프트를 조립한다. (write_logo_typography)
   6) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 타이포 로고 이미지를 생성하고 저장한다. (create_logo_typography)
-  7) run_logo_typography_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
+  7) run_logo_typography_to_editor(...) 로 p_no 기준 acc-front/public/data/promotion 경로에
+     생성 이미지를 저장하고, DB 저장용 메타 정보를 반환한다.
   8) python make_logo_typography.py 로 단독 실행할 수 있다.
 
 ※ 로고 이미지 안에 들어가는 텍스트 규칙
@@ -23,29 +24,26 @@ Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + editor 저장 �
 - 서브: 영어 축제명에서 연도/숫자/회차를 제거한 "축제 이름"만
   예) "2025 Boryeong Mud Festival" -> "Boryeong Mud Festival"
 
-결과 JSON 예시:
+DB 저장용 리턴 예시:
 
 {
-  "type": "logo",
-  "pro_name": "로고",
-  "festival_name_en": "Goheung Aerospace Festival",
-  "monogram_text": "GAF",
-  "width": 2048,
-  "height": 2048,
-  "image_url": "http://localhost:5000/static/editor/9/before_image/logo_typography_....png"
+  "db_file_type": "logo_typography",
+  "type": "image",
+  "db_file_path": "C:\\final_project\\ACC\\acc-front\\public\\data\\promotion\\M000001\\P000001\\logo\\logo_typography_....png",
+  "type_ko": "타이포그래피 로고"
 }
 
 전제 환경변수
 - OPENAI_API_KEY                  : OpenAI API 키
 - BANNER_LLM_MODEL                : (선택) 배너/버스/로고용 LLM, 기본값 "gpt-4o-mini"
 - LOGO_TYPOGRAPHY_MODEL           : (선택) 기본값 "bytedance/seedream-4"
-- LOGO_TYPOGRAPHY_SAVE_DIR        : (선택) 직접 create_logo_typography 를 쓸 때 저장 경로
-- ACC_AI_BASE_URL                 : (선택) 이미지 전체 URL 앞부분, 기본값 "http://localhost:5000"
+- LOGO_TYPOGRAPHY_SAVE_DIR        : (선택) create_logo_typography 단독 사용 시 저장 경로
+- ACC_AI_BASE_URL                 : (선택) (이 모듈에서는 사용 안 함)
+- ACC_MEMBER_NO                   : (선택) 프로모션 파일 경로용 회원번호, 기본값 "M000001"
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import sys
@@ -60,7 +58,7 @@ from replicate.exceptions import ModelError
 # -------------------------------------------------------------
 # 프로젝트 루트 및 .env 로딩 + sys.path 설정
 # -------------------------------------------------------------
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]  # .../ACC/acc-ai
 DATA_ROOT = PROJECT_ROOT / "app" / "data"
 
 LOGO_TYPO_TYPE = "logo_typography"
@@ -185,7 +183,7 @@ def _build_logo_typography_prompt_en(
 
     규칙 (이미지 기준)
     1) 배경은 무조건 단색
-    2) 가운데에 모노그램 텍스트(알파벳만)
+    2) 가운데에 모노그램 텍스트(알파벳만) - 가로 한 줄만
     3) 모노그램 텍스트는 축제 테마/무드에 맞게 디자인
     4) 그 바로 아래 한 줄로 전체 영어 축제명
     """
@@ -199,47 +197,41 @@ def _build_logo_typography_prompt_en(
     details_phrase_en = _n(details_phrase_en)
     spaced_letters = " ".join(list(monogram_text))
 
-    prompt = (
-        "Square 1:1 festival typography logo. "
-        "Follow these exact visual rules: "
-        "1) The background must be a single solid flat color. "
-        "2) In the center, place a large monogram text made only of the given Latin letters. "
-        "3) Design the monogram to match the festival theme and mood described in the text description. "
-        "4) Directly below the monogram, place one line of small text showing the full English festival name. "
-        "5) Other than the solid background and these two text elements, do not draw anything else at all. "
+    prompt = f"""
+Square 1:1 clean logo illustration.
 
-        # 배경: 완전 단색
-        "Fill the entire canvas with exactly one flat background color, from edge to edge. "
-        "Do not use gradients, textures, patterns, noise, borders, vignettes, frames, or images in the background. "
+Background
+- Use a single solid color background only.
+- Do not use any gradients, patterns, textures, noise, paper effects, or images.
+- The background color and accent colors should reflect the festival's theme, mood, and atmosphere:
+  {base_scene_en} {details_phrase_en}
 
-        # 모노그램: 알파벳만, 축제 테마 기반 디자인
-        f"In the center of the canvas, create a large monogram using ONLY the letters \"{monogram_text}\". "
-        f"Use exactly these characters: {spaced_letters}. "
-        "The monogram must be the main focus of the image. "
-        "Design the shape, thickness, curvature, and details of the letters so that they clearly reflect "
-        "the specific festival theme and mood described here: "
-        f"{base_scene_en}. {details_phrase_en}. "
-        "You may stylise and modify the letters, but every character must remain clearly readable. "
+Central monogram
+- In the exact center of the canvas, create a bold custom monogram using ONLY the letters "{monogram_text}".
+- Use exactly these characters, in this exact left-to-right order: {spaced_letters}.
+- Arrange ALL letters on one single straight horizontal line.
+- Do NOT stack the letters, do NOT curve them, and do NOT place them diagonally.
+- Each letter must be upright, not rotated, clearly readable, and evenly aligned on the same baseline.
+- The monogram should look like a distinctive logo mark, not like default typed text, and should visually express the festival concept.
 
-        # 아래 한 줄: 전체 영어 축제명
-        f"Immediately below the monogram, add one single line of smaller, thin, clean text that shows "
-        f"the full English festival name: \"{festival_name_en}\". "
-        "Place this line very close to the monogram, centered horizontally, with the total width visually similar "
-        "to the width of the monogram above. "
-        "Make this subtitle clearly readable but noticeably smaller and lighter than the monogram. "
+Festival name
+- Directly below the monogram, place one small thin line of English text with the full festival name:
+  "{festival_name_en}"
+- Center-align this text under the monogram.
+- The text width should be similar to the monogram width, with comfortable breathing space between them.
+- Use a simple, clean sans-serif style that is easy to read.
 
-        # 절대 추가 금지 요소들
-        "Do NOT add any other text besides: "
-        f"1) the monogram \"{monogram_text}\", and "
-        f"2) the subtitle \"{festival_name_en}\". "
-        "Do NOT add dates, numbers, slogans, URLs, hashtags, labels, or any other words. "
-        "Do NOT draw icons, pictograms, rockets, characters, landscapes, symbols, shapes, or decorative objects. "
-        "Do NOT add logos, badges, borders, frames, or extra graphic elements. "
-        "The final image must contain only: a solid color background, the central monogram, and the one subtitle line below it. "
-        "Do not draw quotation marks."
-    )
+Hard constraints
+- The final image must contain ONLY:
+  1) the solid color background,
+  2) the central horizontal monogram,
+  3) the single small line of the festival name under it.
+- Do NOT add any extra words, dates, numbers, Korean characters, slogans, taglines, icons, symbols, or logos.
+- Do NOT draw frames, borders, or additional decorative text.
+"""
 
-    return prompt.strip()
+    # 공백 정리해서 한 줄 프로ンプ트로
+    return " ".join(prompt.split())
 
 
 # -------------------------------------------------------------
@@ -329,7 +321,7 @@ def write_logo_typography(
 
 
 # -------------------------------------------------------------
-# 3) 저장 디렉터리
+# 3) 저장 디렉터리 (create_logo_typography 단독 사용용)
 # -------------------------------------------------------------
 def _get_logo_typography_save_dir() -> Path:
     """
@@ -338,6 +330,9 @@ def _get_logo_typography_save_dir() -> Path:
       - 상대경로면 PROJECT_ROOT 기준으로 사용
     없으면:
       - PROJECT_ROOT/app/data/logo_typography 사용
+
+    ※ run_logo_typography_to_editor 에서는 사용하지 않고,
+       create_logo_typography 단독 사용 시에만 사용.
     """
     env_dir = os.getenv("LOGO_TYPOGRAPHY_SAVE_DIR")
     if env_dir:
@@ -442,10 +437,10 @@ def create_logo_typography(
 
 
 # -------------------------------------------------------------
-# 5) editor 저장용 헬퍼
+# 5) editor → DB 경로용 헬퍼 (p_no 사용)
 # -------------------------------------------------------------
 def run_logo_typography_to_editor(
-    run_id: int,
+    p_no: str,
     poster_image_url: str,
     festival_name_ko: str,
     festival_period_ko: str,
@@ -453,7 +448,7 @@ def run_logo_typography_to_editor(
 ) -> Dict[str, Any]:
     """
     입력:
-        run_id
+        p_no
         poster_image_url
         festival_name_ko
         festival_period_ko
@@ -461,14 +456,21 @@ def run_logo_typography_to_editor(
 
     동작:
       1) write_logo_typography(...) 로 Seedream 입력용 seedream_input 생성
-      2) create_logo_typography(..., save_dir=before_image_dir) 로
+      2) create_logo_typography(..., save_dir=로고 저장 디렉터리) 로
          실제 타이포그래피 로고 이미지를 생성하고,
-         app/data/editor/<run_id>/before_image/logo_typography_*.png 로 저장한다.
-      3) 타입, 영문 축제명, 모노그램 텍스트, 픽셀 단위 가로/세로, static 전체 URL을 포함한
-         최소 결과 JSON을 구성하여
-         app/data/editor/<run_id>/before_data/logo_typography.json 에 저장한다.
+         acc-front/public/data/promotion/<member_no>/<p_no>/logo/ 아래에 저장한다.
+      3) DB 저장용 메타 정보 딕셔너리를 반환한다.
+
+    반환:
+      {
+        "db_file_type": "logo_typography",
+        "type": "image",
+        "db_file_path": "C:\\...\\acc-front\\public\\data\\promotion\\M000001\\{p_no}\\logo\\logo_typography_....png",
+        "type_ko": "타이포그래피 로고"
+      }
     """
 
+    # 1) 프롬프트 생성
     seedream_input = write_logo_typography(
         poster_image_url=poster_image_url,
         festival_name_ko=festival_name_ko,
@@ -476,37 +478,36 @@ def run_logo_typography_to_editor(
         festival_location_ko=festival_location_ko,
     )
 
-    editor_root = DATA_ROOT / "editor" / str(run_id)
-    before_data_dir = editor_root / "before_data"
-    before_image_dir = editor_root / "before_image"
-    before_data_dir.mkdir(parents=True, exist_ok=True)
-    before_image_dir.mkdir(parents=True, exist_ok=True)
+    # 2) 저장 디렉터리: acc-front/public/data/promotion/<member_no>/<p_no>/logo
+    member_no = os.getenv("ACC_MEMBER_NO", "M000001")
+    front_root = PROJECT_ROOT.parent / "acc-front"
+    logo_dir = (
+        front_root
+        / "public"
+        / "data"
+        / "promotion"
+        / member_no
+        / str(p_no)
+        / "logo"
+    )
+    logo_dir.mkdir(parents=True, exist_ok=True)
 
+    # 3) 이미지 생성
     create_result = create_logo_typography(
         seedream_input,
-        save_dir=before_image_dir,
+        save_dir=logo_dir,
         prefix="logo_typography_",
     )
 
-    image_filename = create_result["image_filename"]
-
-    base_url = os.getenv("ACC_AI_BASE_URL", "http://localhost:5000").rstrip("/")
-    static_prefix = "/static"
-    image_url = f"{base_url}{static_prefix}/editor/{run_id}/before_image/{image_filename}"
+    # 4) 실제 저장된 파일 경로를 그대로 사용
+    db_file_path = str(create_result["image_path"])
 
     result: Dict[str, Any] = {
-        "type": LOGO_TYPO_TYPE,
-        "pro_name": LOGO_TYPO_PRO_NAME,
-        "festival_name_en": create_result["festival_name_en"],
-        "monogram_text": create_result["monogram_text"],
-        "width": LOGO_TYPO_WIDTH_PX,
-        "height": LOGO_TYPO_HEIGHT_PX,
-        "image_url": image_url,
+        "db_file_type": LOGO_TYPO_TYPE,      # "logo_typography"
+        "type": "image",
+        "db_file_path": db_file_path,
+        "type_ko": LOGO_TYPO_PRO_NAME,       # "타이포그래피 로고"
     }
-
-    json_path = before_data_dir / "logo_typography.json"
-    with json_path.open("w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
 
     return result
 
@@ -520,8 +521,8 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 10
- 
+    p_no = "10"
+
     poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\geoje.png"
     festival_name_ko = "거제몽돌해변축제"
     festival_period_ko = "2013.07.13 ~ 2013.07.14"
@@ -529,6 +530,8 @@ def main() -> None:
 
     # 2) 필수값 체크
     missing = []
+    if not p_no:
+        missing.append("p_no")
     if not poster_image_url:
         missing.append("poster_image_url")
     if not festival_name_ko:
@@ -544,28 +547,25 @@ def main() -> None:
             print("  -", k)
         return
 
-    # 3) 실제 실행
+    # 3) 실제 실행 (Dict 리턴)
     result = run_logo_typography_to_editor(
-        run_id=run_id,
+        p_no=p_no,
         poster_image_url=poster_image_url,
         festival_name_ko=festival_name_ko,
         festival_period_ko=festival_period_ko,
         festival_location_ko=festival_location_ko,
     )
 
-    editor_root = DATA_ROOT / "editor" / str(run_id)
-    json_path = editor_root / "before_data" / "logo_typography.json"
-    image_dir = editor_root / "before_image"
+    # stdout으로는 값 4개만 딱 찍어주기
+    db_file_type = result.get("db_file_type", "")
+    type_ = result.get("type", "")
+    db_file_path = result.get("db_file_path", "")
+    type_ko = result.get("type_ko", "")
 
-    print("✅ typography logo 생성 + editor 저장 완료")
-    print("  type             :", result.get("type"))
-    print("  pro_name         :", result.get("pro_name"))
-    print("  festival_name_en :", result.get("festival_name_en"))
-    print("  monogram_text    :", result.get("monogram_text"))
-    print("  width x height   :", result.get("width"), "x", result.get("height"))
-    print("  image_url        :", result.get("image_url"))
-    print("  json_path        :", json_path)
-    print("  image_dir        :", image_dir)
+    print(db_file_type)
+    print(type_)
+    print(db_file_path)
+    print(type_ko)
 
 
 if __name__ == "__main__":

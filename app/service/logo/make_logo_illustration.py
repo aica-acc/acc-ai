@@ -3,7 +3,7 @@
 app/service/logo/make_logo_illustration.py
 
 축제 일러스트 로고(정사각형 2048x2048)용
-Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + editor 저장 모듈.
+Seedream 입력/프롬프트 생성 + 생성 이미지 저장 모듈.
 
 역할
 - 참고용 포스터 이미지 경로 + 축제 정보(한글)를 입력받아서
@@ -17,9 +17,9 @@ Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + editor 저장 �
      로고 프롬프트를 조립한다. (write_logo_illustration)
   6) 해당 JSON을 Replicate(Seedream)에 넘겨 (image_input 없이)
      실제 일러스트 로고 이미지를 생성하고 저장한다. (create_logo_illustration)
-  7) run_logo_illustration_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
+  7) run_logo_illustration_to_editor(...) 로 p_no 기준 acc-front/public/data/promotion 경로에
+     생성 이미지를 저장하고, DB 저장용 메타 정보를 반환한다.
   8) python make_logo_illustration.py 로 단독 실행할 수 있다.
-
 
 디자인 제약 (반드시 지켜야 할 규칙)
 1. 배경은 단색(ONE solid color)이어야 한다. 그라디언트/패턴/질감/테두리 금지.
@@ -28,23 +28,21 @@ Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + editor 저장 �
 4. 배경 + (중앙 일러스트 + 텍스트) 외에는 어떤 요소도 추가하면 안 된다.
    (추가 아이콘, 장식선, 배지, 그림, 부가 텍스트, 워터마크 등 모두 금지)
 
-결과 JSON 예시:
+DB 저장용 리턴 예시:
 
 {
-  "type": "logo_illustration",
-  "pro_name": "일러스트 로고",
-  "festival_name_en": "Boryeong Mud Festival",
-  "width": 2048,
-  "height": 2048,
-  "image_url": "http://localhost:5000/static/editor/11/before_image/logo_illustration_....png"
+  "db_file_type": "logo_illustration",
+  "type": "image",
+  "db_file_path": "C:\\final_project\\ACC\\acc-front\\public\\data\\promotion\\M000001\\P000001\\logo\\logo_illustration_....png",
+  "type_ko": "일러스트 로고"
 }
 
 전제 환경변수
 - OPENAI_API_KEY                  : OpenAI API 키
 - BANNER_LLM_MODEL                : (선택) 배너/버스/로고용 LLM, 기본값 "gpt-4o-mini"
 - LOGO_ILLUSTRATION_MODEL         : (선택) 기본값 "bytedance/seedream-4"
-- LOGO_ILLUSTRATION_SAVE_DIR      : (선택) 직접 create_logo_illustration 를 쓸 때 저장 경로
-- ACC_AI_BASE_URL                 : (선택) 이미지 전체 URL 앞부분, 기본값 "http://localhost:5000"
+- LOGO_ILLUSTRATION_SAVE_DIR      : (선택) create_logo_illustration 단독 사용 시 저장 경로
+- ACC_MEMBER_NO                   : (선택) 프로모션 파일 경로용 회원번호, 기본값 "M000001"
 """
 
 from __future__ import annotations
@@ -82,7 +80,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # road_banner 공용 유틸 재사용
 from app.service.banner_khs.make_road_banner import (  # type: ignore
     _translate_festival_ko_to_en,
-    _build_scene_phrase_from_poster,   # ✅ 포스터 분석 함수 추가
+    _build_scene_phrase_from_poster,   # ✅ 포스터 분석 함수
     _save_image_from_file_output,
 )
 
@@ -205,10 +203,9 @@ def _infer_theme_from_english(
         ],
     )
 
-    # responses.create 결과에서 순수 텍스트만 추출 (gpt-4o-mini 기준)
     try:
         theme_text = resp.output[0].content[0].text  # type: ignore[attr-defined]
-    except Exception as e:  # pragma: no cover - 방어적 코드
+    except Exception as e:  # pragma: no cover
         raise RuntimeError(f"축제 테마 LLM 응답 파싱 실패: {e!r} / raw={resp!r}")
 
     theme_text = " ".join(str(theme_text or "").strip().split())
@@ -234,7 +231,6 @@ def _build_logo_illustration_prompt_en(
     festival_theme_en = _n(festival_theme_en)
 
     prompt = (
-        # 상단: 전체 규칙 요약 (1)~(5)
         "Square 1:1 festival illustration logo. "
         "Follow these exact visual rules: "
         "1) The background must be a single solid flat color. "
@@ -243,11 +239,9 @@ def _build_logo_illustration_prompt_en(
         "4) Make the festival title text visually integrated with the illustration so they look like one unified logo mark. "
         "5) Other than the solid background and this single central illustration+text logo, do not draw anything else at all. "
 
-        # 배경: 완전 단색
         "Fill the entire canvas with exactly one flat background color, from edge to edge. "
         "Do not use gradients, textures, patterns, noise, borders, vignettes, frames, photographs, or images in the background. "
 
-        # 중앙 로고: 단순 일러스트 + 영어 축제명
         f"The central logo must be a very simple flat illustration combined with text. "
         f"The illustration should be a clean minimal symbol that represents this festival theme: \"{festival_theme_en}\". "
         "Use a minimal, vector-like style with clean geometric shapes and avoid complex scenery or multiple scattered elements. "
@@ -255,16 +249,13 @@ def _build_logo_illustration_prompt_en(
         "Arrange the illustration and the text so they clearly belong together as a single compact logo in the centre of the canvas, "
         "with generous empty margin around them. The text must remain easy to read from a distance. "
 
-        # 텍스트 규칙
         "Use the festival title exactly as provided. Do not translate, shorten, or change any words. "
         "Do not add any extra text such as dates, locations, slogans, URLs, hashtags, or tags. "
         "Use only Latin letters from the title; do not use Korean or any other scripts. "
 
-        # 스타일 제한
         "Keep the illustration and text in a simple flat style. "
         "Do not use 3D effects, inner or outer glows, gradients, heavy shadows, glossy highlights, or realistic rendering. "
 
-        # 절대 추가 금지 요소들
         "Do NOT add other icons, pictograms, characters, landscapes, decorative shapes, lines, frames, badges, or logos anywhere. "
         "Do NOT place extra graphics or text in the corners or along the edges. "
         "The final image must contain only: one solid background colour and one central combined illustration plus the full English festival title. "
@@ -285,15 +276,6 @@ def write_logo_illustration(
 ) -> Dict[str, Any]:
     """
     축제 일러스트 로고(2048x2048)용 Seedream 입력 JSON 생성.
-
-    - poster_image_url 은 참고용 포스터 이미지 경로(또는 URL)이다.
-      이미지는 Seedream image_input 으로 직접 사용하지 않고 LLM 분석용으로만 활용한다.
-    - festival_name_ko 에 '제 7회', '제 15회', '2025년' 등이 포함되어 있어도
-      회차/연도를 제거한 순수 축제명만 번역에 사용한다.
-    - 최종 텍스트는 연도/숫자/회차를 제거한 영어 축제명만 사용한다.
-    - 축제명(한/영) + 기간 + 장소 + 포스터 이미지를 이용해
-      LLM으로 대략적인 축제 테마 문장(festival_theme_en)을 만든다.
-    - 이미지에는 이 "영문 축제명(연도/회차 제거)"만 텍스트로 사용하도록 프롬프트를 구성한다.
     """
 
     # 0) 회차/연도 제거된 순수 한글 축제명
@@ -330,7 +312,7 @@ def write_logo_illustration(
         festival_location_en=location_en,
     )
 
-    # 2-1) 포스터 기반 씬/색감/무드 분석 (LLM vision) – 타이포그래피 로고와 동일한 방식
+    # 2-1) 포스터 기반 씬/색감/무드 분석 (LLM vision)
     scene_info = _build_scene_phrase_from_poster(
         poster_image_url=poster_image_url,
         festival_name_en=festival_full_name_en,
@@ -380,7 +362,7 @@ def write_logo_illustration(
 
 
 # -------------------------------------------------------------
-# 3) 저장 디렉터리
+# 3) 저장 디렉터리 (create_logo_illustration 단독 사용용)
 # -------------------------------------------------------------
 def _get_logo_illustration_save_dir() -> Path:
     """
@@ -493,10 +475,10 @@ def create_logo_illustration(
 
 
 # -------------------------------------------------------------
-# 5) editor 저장용 헬퍼
+# 5) editor → DB 경로용 헬퍼 (p_no 사용)
 # -------------------------------------------------------------
 def run_logo_illustration_to_editor(
-    run_id: int,
+    p_no: str,
     poster_image_url: str,
     festival_name_ko: str,
     festival_period_ko: str,
@@ -504,7 +486,7 @@ def run_logo_illustration_to_editor(
 ) -> Dict[str, Any]:
     """
     입력:
-        run_id
+        p_no
         poster_image_url
         festival_name_ko
         festival_period_ko
@@ -512,14 +494,21 @@ def run_logo_illustration_to_editor(
 
     동작:
       1) write_logo_illustration(...) 로 Seedream 입력용 seedream_input 생성
-      2) create_logo_illustration(..., save_dir=before_image_dir) 로
+      2) create_logo_illustration(..., save_dir=로고 저장 디렉터리) 로
          실제 일러스트 로고 이미지를 생성하고,
-         app/data/editor/<run_id>/before_image/logo_illustration_*.png 로 저장한다.
-      3) 타입, 영문 축제명, 픽셀 단위 가로/세로, static 전체 URL을 포함한
-         최소 결과 JSON을 구성하여
-         app/data/editor/<run_id>/before_data/logo_illustration.json 에 저장한다.
+         acc-front/public/data/promotion/<member_no>/<p_no>/logo/ 아래에 저장한다.
+      3) DB 저장용 메타 정보 딕셔너리를 반환한다.
+
+    반환:
+      {
+        "db_file_type": "logo_illustration",
+        "type": "image",
+        "db_file_path": "C:\\...\\acc-front\\public\\data\\promotion\\M000001\\{p_no}\\logo\\logo_illustration_....png",
+        "type_ko": "일러스트 로고"
+      }
     """
 
+    # 1) 프롬프트 생성
     seedream_input = write_logo_illustration(
         poster_image_url=poster_image_url,
         festival_name_ko=festival_name_ko,
@@ -527,37 +516,35 @@ def run_logo_illustration_to_editor(
         festival_location_ko=festival_location_ko,
     )
 
-    editor_root = DATA_ROOT / "editor" / str(run_id)
-    before_data_dir = editor_root / "before_data"
-    before_image_dir = editor_root / "before_image"
-    before_data_dir.mkdir(parents=True, exist_ok=True)
-    before_image_dir.mkdir(parents=True, exist_ok=True)
+    # 2) 저장 디렉터리: acc-front/public/data/promotion/<member_no>/<p_no>/logo
+    member_no = os.getenv("ACC_MEMBER_NO", "M000001")
+    front_root = PROJECT_ROOT.parent / "acc-front"
+    logo_dir = (
+        front_root
+        / "public"
+        / "data"
+        / "promotion"
+        / member_no
+        / str(p_no)
+        / "logo"
+    )
+    logo_dir.mkdir(parents=True, exist_ok=True)
 
+    # 3) 이미지 생성
     create_result = create_logo_illustration(
         seedream_input,
-        save_dir=before_image_dir,
+        save_dir=logo_dir,
         prefix="logo_illustration_",
     )
 
-    image_filename = create_result["image_filename"]
+    db_file_path = str(create_result["image_path"])
 
-    base_url = os.getenv("ACC_AI_BASE_URL", "http://localhost:5000").rstrip("/")
-    static_prefix = "/static"
-    image_url = f"{base_url}{static_prefix}/editor/{run_id}/before_image/{image_filename}"
-
-    # 🔽 여기에서 poster_image_url 필드만 제거
     result: Dict[str, Any] = {
-        "type": LOGO_ILLUST_TYPE,
-        "pro_name": LOGO_ILLUST_PRO_NAME,
-        "festival_name_en": create_result["festival_name_en"],
-        "width": LOGO_ILLUST_WIDTH_PX,
-        "height": LOGO_ILLUST_HEIGHT_PX,
-        "image_url": image_url,
+        "db_file_type": LOGO_ILLUST_TYPE,   # "logo_illustration"
+        "type": "image",
+        "db_file_path": db_file_path,
+        "type_ko": LOGO_ILLUST_PRO_NAME,    # "일러스트 로고"
     }
-
-    json_path = before_data_dir / "logo_illustration.json"
-    with json_path.open("w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
 
     return result
 
@@ -571,7 +558,7 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 10
+    p_no = "10"
 
     poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\geoje.png"
     festival_name_ko = "거제몽돌해변축제"
@@ -580,6 +567,8 @@ def main() -> None:
 
     # 2) 필수값 체크
     missing = []
+    if not p_no:
+        missing.append("p_no")
     if not poster_image_url:
         missing.append("poster_image_url")
     if not festival_name_ko:
@@ -595,27 +584,25 @@ def main() -> None:
             print("  -", k)
         return
 
-    # 3) 실제 실행
+    # 3) 실제 실행 (Dict 리턴)
     result = run_logo_illustration_to_editor(
-        run_id=run_id,
+        p_no=p_no,
         poster_image_url=poster_image_url,
         festival_name_ko=festival_name_ko,
         festival_period_ko=festival_period_ko,
         festival_location_ko=festival_location_ko,
     )
 
-    editor_root = DATA_ROOT / "editor" / str(run_id)
-    json_path = editor_root / "before_data" / "logo_illustration.json"
-    image_dir = editor_root / "before_image"
+    # stdout으로는 값 4개만 딱 찍어주기 (타이포그래피와 동일 포맷)
+    db_file_type = result.get("db_file_type", "")
+    type_ = result.get("type", "")
+    db_file_path = result.get("db_file_path", "")
+    type_ko = result.get("type_ko", "")
 
-    print("✅ illustration logo 생성 + editor 저장 완료")
-    print("  type             :", result.get("type"))
-    print("  pro_name         :", result.get("pro_name"))
-    print("  festival_name_en :", result.get("festival_name_en"))
-    print("  width x height   :", result.get("width"), "x", result.get("height"))
-    print("  image_url        :", result.get("image_url"))
-    print("  json_path        :", json_path)
-    print("  image_dir        :", image_dir)
+    print(db_file_type)
+    print(type_)
+    print(db_file_path)
+    print(type_ko)
 
 
 if __name__ == "__main__":
