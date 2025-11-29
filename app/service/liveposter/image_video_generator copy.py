@@ -32,11 +32,9 @@ async def generate_live_poster_service(request) -> List[Dict[str, Any]]:
     print(f"🎬 [LivePoster] 9:16 생성 시작... Project: {request.project_id}")
 
     # 2. Motion Prompt 구성
-    base_prompt = (
-        f"A cinematic poster based on '{request.concept_text}'. "
-        f"Visual elements: {request.visual_keywords}. "
-        f"Dramatic and atmospheric."
-    )
+    base_prompt = f"A cinematic poster based on '{request.concept_text}'. " \
+                  f"Visual elements: {request.visual_keywords}. " \
+                  f"Dramatic and atmospheric." 
     final_prompt = f"{base_prompt}{MAGIC_SUFFIX}"
     
     # 3. 저장 경로 설정 (상대 경로 사용)
@@ -47,21 +45,25 @@ async def generate_live_poster_service(request) -> List[Dict[str, Any]]:
     generated_results = []
     
     try:
-        # ✅ 9:16 비율 고정
         target_ratio = "9:16"
         
-        # 🚨 [테스트 모드] DB 경로 무시하고, 내 컴퓨터에 진짜 있는 파일로 강제 설정!
-        source_image_path = "app/poster_service/poster_final_864x1152.png" 
+        # 🚨 [경로 긴급 수정] 윈도우 경로 호환성 처리.
+        source_image_path = request.poster_image_path.strip()
+        if source_image_path.startswith("/") or source_image_path.startswith("\\"):
+             source_image_path = source_image_path.lstrip("/").lstrip("\\")
 
-        # 혹시 위 파일이 없으면 다른 걸로 시도 (안전장치)
+        # 혹시 경로가 안 맞을 경우를 대비해 절대 경로 체크 
         if not os.path.exists(source_image_path):
-            print(f"⚠️ 테스트 파일도 못 찾아서, 요청받은 경로로 다시 시도합니다.")
-            source_image_path = request.poster_image_path.strip().lstrip("/").lstrip("\\")
-        
-        if not os.path.exists(source_image_path):
-            raise Exception(f"❌ 원본 파일이 없습니다: {source_image_path} (CWD: {os.getcwd()})")
+            # 만약 현재 경로에도 없다면 'app/'을 붙여서 한 번 더 확인 (구조에 따라 다름)
+            alt_path = os.path.join("app", source_image_path)
+            if os.path.exists(alt_path):
+                source_image_path = alt_path
+            else:
+                # 최후의 수단: 절대 경로 출력해서 확인
+                print(f"Current Working Dir: {os.getcwd()}")
+                raise Exception(f"❌ 원본 파일이 없습니다: {source_image_path} (CWD: {os.getcwd()})")
 
-        print(f"📹 [TEST] 영상 생성 요청 (Source: {source_image_path})")
+        print(f"📹 영상 생성 요청 (Source: {os.path.basename(source_image_path)})")
         
         # 4. Replicate AI 호출
         with open(source_image_path, "rb") as file:
@@ -91,6 +93,7 @@ async def generate_live_poster_service(request) -> List[Dict[str, Any]]:
             print(f"💾 영상 저장 완료: {local_file_path}")
             
             # ✅ [핵심] 표준 Dict 포맷 + 전용 데이터 통합
+            # DB 저장용 경로: 윈도우 역슬래시(\)를 슬래시(/)로 통일 (DB 호환성)
             db_save_path = local_file_path.replace("\\", "/")
 
             result_data: Dict[str, Any] = {
