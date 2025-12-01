@@ -505,12 +505,12 @@ def main() -> None:
 
     # stdout으로는 값 4개만 딱 찍어주기 (다른 모듈들과 동일 포맷)
     db_file_type = result.get("db_file_type", "")
-    type_ = result.get("type", "")
+    type = result.get("type", "")
     db_file_path = result.get("db_file_path", "")
     type_ko = result.get("type_ko", "")
 
     print(db_file_type)
-    print(type_)
+    print(type)
     print(db_file_path)
     print(type_ko)
 
