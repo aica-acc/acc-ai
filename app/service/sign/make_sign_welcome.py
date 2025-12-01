@@ -155,10 +155,6 @@ def _build_sign_welcome_prompt_en(
     return prompt.strip()
 
 
-
-
-
-
 # -------------------------------------------------------------
 # 4) write_sign_welcome: Seedream 입력 JSON 생성
 # -------------------------------------------------------------
@@ -392,7 +388,7 @@ def create_sign_welcome(
 # 7) editor → DB 경로용 헬퍼 (p_no 사용)
 # -------------------------------------------------------------
 def run_sign_welcome_to_editor(
-    p_no: str,
+    p_no: int,
     mascot_image_url: str,
     festival_name_ko: str,
     festival_period_ko: str,
@@ -400,7 +396,7 @@ def run_sign_welcome_to_editor(
 ) -> Dict[str, Any]:
     """
     입력:
-        p_no
+        p_no (int)
         mascot_image_url
         festival_name_ko
         festival_period_ko
@@ -472,7 +468,7 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    p_no = "10"
+    p_no = 10
 
     mascot_image_url = r"C:\final_project\ACC\acc-ai\app\data\mascot\cheonan.png"
     festival_name_ko = "2025 천안흥타령축제"

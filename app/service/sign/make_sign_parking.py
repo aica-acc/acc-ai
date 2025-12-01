@@ -80,7 +80,7 @@ from app.service.banner_khs.make_road_banner import (  # type: ignore
 # -------------------------------------------------------------
 def _split_festival_count_and_name(full_name_ko: str) -> Tuple[str, str]:
     """
-    입력: "제7회 담양산타축제", "제 7회 담양산타축제", "담양산타축제" 등
+    입력: "제7회 담양산타축제", "제 7회 담양산타축제", "담양선타축제" 등
 
     반환:
       (festival_count, festival_name_ko)
@@ -156,7 +156,6 @@ def _build_sign_parking_prompt_en(
     )
 
     return prompt.strip()
-
 
 
 # -------------------------------------------------------------
@@ -392,7 +391,7 @@ def create_sign_parking(
 # 7) editor → DB 경로용 헬퍼 (p_no 사용)
 # -------------------------------------------------------------
 def run_sign_parking_to_editor(
-    p_no: str,
+    p_no: int,
     mascot_image_url: str,
     festival_name_ko: str,
     festival_period_ko: str,
@@ -400,7 +399,7 @@ def run_sign_parking_to_editor(
 ) -> Dict[str, Any]:
     """
     입력:
-        p_no
+        p_no (int)
         mascot_image_url
         festival_name_ko
         festival_period_ko
@@ -472,7 +471,7 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    p_no = "10"
+    p_no = 10
 
     mascot_image_url = r"C:\final_project\ACC\acc-ai\app\data\mascot\kimcheon.png"
     festival_name_ko = "2025 김천김밥축제"

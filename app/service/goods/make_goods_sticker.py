@@ -312,15 +312,15 @@ def create_goods_sticker(
             output = replicate.run(model_name, input=replicate_input)
             break
         except ModelError as e:
-                msg = str(e)
-                # Seedream 특유의 일시적인 에러 코드 케이스 한 번 더 시도
-                if "Prediction interrupted" in msg or "code: PA" in msg:
-                    last_err = e
-                    time.sleep(1.0)
-                    continue
-                raise RuntimeError(
-                    f"Seedream model error during goods sticker generation: {e}"
-                )
+            msg = str(e)
+            # Seedream 특유의 일시적인 에러 코드 케이스 한 번 더 시도
+            if "Prediction interrupted" in msg or "code: PA" in msg:
+                last_err = e
+                time.sleep(1.0)
+                continue
+            raise RuntimeError(
+                f"Seedream model error during goods sticker generation: {e}"
+            )
         except Exception as e:
             raise RuntimeError(
                 f"Unexpected error during goods sticker generation: {e}"
@@ -383,7 +383,7 @@ def create_goods_sticker(
 # 7) editor → DB 경로용 헬퍼 (p_no 사용)
 # -------------------------------------------------------------
 def run_goods_sticker_to_editor(
-    p_no: str,
+    p_no: int,
     mascot_image_url: str,
     festival_name_ko: str,
     festival_period_ko: str,
@@ -391,7 +391,7 @@ def run_goods_sticker_to_editor(
 ) -> Dict[str, Any]:
     """
     입력:
-        p_no
+        p_no (int)
         mascot_image_url
         festival_name_ko
         festival_period_ko
@@ -464,7 +464,7 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    p_no = "10"
+    p_no = 10
 
     mascot_image_url = r"C:\final_project\ACC\acc-ai\app\data\mascot\kimcheon.png"
     festival_name_ko = "2025 김천김밥축제"

@@ -1,33 +1,34 @@
 # -*- coding: utf-8 -*-
 """
-app/service/sign/make_sign_toilet.py
+app/service/goods/make_goods_key_ring.py
 
-축제 화장실 안내 표지용(정사각형 2048x2048) Seedream 모듈.
+축제 마스코트 키링 굿즈(정사각형 2048x2048)용 Seedream 모듈.
 
 역할
 - 참고용 마스코트 이미지(URL 또는 로컬 파일 경로)와 축제 정보(한글)를 입력받아서
   1) OpenAI LLM으로 축제명/기간/장소를 영어로 번역하고
   2) 마스코트 이미지를 시각적으로 분석해서 축제 테마/무드 정보를 영어로 만든 뒤
-  3) 축제명/테마를 이용해 정사각형 화장실 안내 표지 프롬프트를 조립한다. (write_sign_toilet)
-  4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 한 번 생성하고 저장한다. (create_sign_toilet)
-  5) run_sign_toilet_to_editor(...) 로 p_no 기준 acc-front/public/data/promotion 경로에
+  3) 축제명/테마를 이용해 "마스코트 키링 4종 세트" 프롬프트를 조립한다. (write_goods_key_ring)
+     - 하나의 정사각형 캔버스 안에 서로 다른 디자인의 키링 4개가 들어가야 한다.
+  4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 한 번 생성하고 저장한다. (create_goods_key_ring)
+  5) run_goods_key_ring_to_editor(...) 로 p_no 기준 acc-front/public/data/promotion 경로에
      생성 이미지를 저장하고, DB 저장용 메타 정보를 반환한다.
-  6) python make_sign_toilet.py 로 단독 실행할 수 있다.
+  6) python make_goods_key_ring.py 로 단독 실행할 수 있다.
 
 DB 저장용 리턴 예시:
 
 {
-  "db_file_type": "sign_toilet",
+  "db_file_type": "goods_key_ring",
   "type": "image",
-  "db_file_path": "C:\\final_project\\ACC\\acc-front\\public\\data\\promotion\\M000001\\P000001\\sign\\sign_toilet.png",
-  "type_ko": "화장실 표지판"
+  "db_file_path": "C:\\final_project\\ACC\\acc-front\\public\\data\\promotion\\M000001\\P000001\\goods\\goods_key_ring.png",
+  "type_ko": "키링 굿즈"
 }
 
 전제 환경변수
 - OPENAI_API_KEY             : OpenAI API 키 (banner_khs.make_road_banner 내부에서 사용)
-- BANNER_LLM_MODEL           : (선택) 배너/버스/표지판용 LLM, 기본값 "gpt-4o-mini"
-- SIGN_TOILET_MODEL          : (선택) 기본값 "bytedance/seedream-4"
-- SIGN_TOILET_SAVE_DIR       : (선택) create_sign_toilet 단독 사용 시 저장 경로
+- BANNER_LLM_MODEL           : (선택) 배너/버스/표지판/굿즈용 LLM, 기본값 "gpt-4o-mini"
+- GOODS_KEY_RING_MODEL       : (선택) 기본값 "bytedance/seedream-4"
+- GOODS_KEY_RING_SAVE_DIR    : (선택) create_goods_key_ring 단독 사용 시 저장 경로
 - ACC_MEMBER_NO              : (선택) 프로모션 파일 경로용 회원번호, 기본값 "M000001"
 """
 
@@ -51,11 +52,11 @@ from replicate.exceptions import ModelError
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_ROOT = PROJECT_ROOT / "app" / "data"
 
-# 화장실 안내 표지 고정 스펙 (정사각형 2048 x 2048)
-SIGN_TOILET_TYPE = "sign_toilet"
-SIGN_TOILET_PRO_NAME = "화장실 표지판"
-SIGN_TOILET_WIDTH = 2048
-SIGN_TOILET_HEIGHT = 2048
+# 키링 굿즈 고정 스펙 (정사각형 2048 x 2048)
+GOODS_KEY_RING_TYPE = "goods_key_ring"
+GOODS_KEY_RING_PRO_NAME = "키링 굿즈"
+GOODS_KEY_RING_WIDTH = 2048
+GOODS_KEY_RING_HEIGHT = 2048
 
 env_path = PROJECT_ROOT / ".env"
 load_dotenv(env_path)
@@ -73,7 +74,6 @@ from app.service.banner_khs.make_road_banner import (  # type: ignore
     _save_image_from_file_output,
     _download_image_bytes,
 )
-
 
 # -------------------------------------------------------------
 # 1) 한글 축제명에서 회차/축제명 분리 (필요시)
@@ -110,48 +110,60 @@ def _norm(s: str) -> str:
 
 
 # -------------------------------------------------------------
-# 3) 화장실 안내 표지 프롬프트 조립 (정사각형)
+# 3) 키링 굿즈 프롬프트 조립 (정사각형, 4종)
 # -------------------------------------------------------------
-def _build_sign_toilet_prompt_en(
+def _build_goods_key_ring_prompt_en(
     festival_name_en: str,
     base_scene_en: str,
     details_phrase_en: str,
 ) -> str:
     """
-    화장실 안내 표지 프롬프트 (간결 버전)
-    - TOILET, 50m, 위쪽 화살표, 마스코트
+    마스코트 키링 4종 세트 프롬프트 (짧은 버전)
+
+    규칙:
+    1) 같은 마스코트만 나온다 (사람/배경 X)
+    2) 4개 전부 다른 포즈·소품
+    3) 굵은 외곽선 + 탭 구멍 + 메탈 링
+    4) 배경은 완전 흰색
     """
 
-    # 지금은 분위기 텍스트는 쓰지 않고, 프롬프트를 최대한 간결하게 유지
+    # 축제 정보는 '소품 아이디어용' 정도로만 사용
+    scene_phrase_en = _norm(f"{base_scene_en} {details_phrase_en}")
     _ = _norm(festival_name_en)
-    _ = _norm(base_scene_en)
-    _ = _norm(details_phrase_en)
 
     prompt = (
-        "Square flat graphic of a toilet direction sign on a light background, "
-        "using the colours and style of the attached mascot image. "
-        "At the top, draw one large solid arrow pointing straight up. "
-        "In the middle, write the word \"TOILET\" in very large bold capital letters, centered. "
-        "Below it, write \"50m\" in smaller bold text. "
-        "Place the mascot clearly below or to the side of the text so it does not touch or overlap "
-        "the letters or the arrow. "
-        "Do not add any other text or numbers."
+        "Pure white background only, flat 2D illustration. "
+        "Show four separate acrylic mascot keychains in a loose 2x2 grid. "
+        "Each keychain shows the SAME mascot character only, full body, "
+        "with no other people, no animals, and no detailed background or scenery. "
+        "Make the four designs clearly different using poses, facial expressions, "
+        f"and small simple festival-themed props in the mascot’s hands inspired by: {scene_phrase_en}. "
+        "Every keychain has a bold smooth outline that follows the mascot shape, "
+        "a small round tab with a hole at the top, and a shiny metal key ring attached through that hole "
+        "on all four designs. "
+        "Do not draw any text, letters, numbers, signs, buildings, landscapes, or frames."
     )
 
     return prompt.strip()
 
 
+
+
+
+
+
+
 # -------------------------------------------------------------
-# 4) write_sign_toilet: Seedream 입력 JSON 생성
+# 4) write_goods_key_ring: Seedream 입력 JSON 생성
 # -------------------------------------------------------------
-def write_sign_toilet(
+def write_goods_key_ring(
     mascot_image_url: str,
     festival_name_ko: str,
     festival_period_ko: str,
     festival_location_ko: str,
 ) -> Dict[str, Any]:
     """
-    정사각형 화장실 안내 표지(2048x2048)용 Seedream 입력 JSON을 생성한다.
+    정사각형 마스코트 키링 굿즈(2048x2048)용 Seedream 입력 JSON을 생성한다.
 
     - festival_name_ko: "제15회 고흥 우주항공 축제" 또는 "고흥 우주항공 축제" 등
       → 내부에서 회차/축제명을 분리해 영어 축제명 번역에 사용한다.
@@ -180,7 +192,7 @@ def write_sign_toilet(
     )
 
     # 4) 최종 프롬프트 조립
-    prompt = _build_sign_toilet_prompt_en(
+    prompt = _build_goods_key_ring_prompt_en(
         festival_name_en=name_en,
         base_scene_en=scene_info["base_scene_en"],
         details_phrase_en=scene_info["details_phrase_en"],
@@ -189,8 +201,8 @@ def write_sign_toilet(
     # 5) Seedream / Replicate 입력 JSON 구성
     seedream_input: Dict[str, Any] = {
         "size": "custom",
-        "width": SIGN_TOILET_WIDTH,
-        "height": SIGN_TOILET_HEIGHT,
+        "width": GOODS_KEY_RING_WIDTH,
+        "height": GOODS_KEY_RING_HEIGHT,
         "prompt": prompt,
         "max_images": 1,
         "aspect_ratio": "1:1",  # 정사각형 비율
@@ -213,43 +225,43 @@ def write_sign_toilet(
 
 
 # -------------------------------------------------------------
-# 5) 화장실 표지 저장 디렉터리 결정
+# 5) 키링 굿즈 저장 디렉터리 결정
 # -------------------------------------------------------------
-def _get_sign_toilet_save_dir() -> Path:
+def _get_goods_key_ring_save_dir() -> Path:
     """
-    SIGN_TOILET_SAVE_DIR 환경변수가 있으면:
+    GOODS_KEY_RING_SAVE_DIR 환경변수가 있으면:
       - 절대경로면 그대로 사용
       - 상대경로면 PROJECT_ROOT 기준으로 사용
     없으면:
-      - PROJECT_ROOT/app/data/sign_toilet 사용
+      - PROJECT_ROOT/app/data/goods_key_ring 사용
     """
-    env_dir = os.getenv("SIGN_TOILET_SAVE_DIR")
+    env_dir = os.getenv("GOODS_KEY_RING_SAVE_DIR")
     if env_dir:
         p = Path(env_dir)
         if not p.is_absolute():
             p = PROJECT_ROOT / p
         return p
-    return DATA_ROOT / "sign_toilet"
+    return DATA_ROOT / "goods_key_ring"
 
 
 # -------------------------------------------------------------
-# 6) create_sign_toilet: Seedream JSON → Replicate 호출 → 이미지 저장
+# 6) create_goods_key_ring: Seedream JSON → Replicate 호출 → 이미지 저장
 #     (한 번만 생성, LLM 체크 없음)
 # -------------------------------------------------------------
-def create_sign_toilet(
+def create_goods_key_ring(
     seedream_input: Dict[str, Any],
     save_dir: Path | None = None,
-    prefix: str = "sign_toilet_",
+    prefix: str = "goods_key_ring_",
 ) -> Dict[str, Any]:
     """
-    write_sign_toilet(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
+    write_goods_key_ring(...) 에서 만든 Seedream 입력 JSON을 그대로 받아
     1) image_input 의 URL/경로를 이용해 이미지를 다운로드하고,
-    2) Replicate(bytedance/seedream-4 또는 SIGN_TOILET_MODEL)에
-       prompt + image_input과 함께 전달해 실제 정사각형 화장실 안내 표지 이미지를 한 번 생성하고,
+    2) Replicate(bytedance/seedream-4 또는 GOODS_KEY_RING_MODEL)에
+       prompt + image_input과 함께 전달해 실제 정사각형 키링 굿즈 이미지를 한 번 생성하고,
     3) 생성된 이미지를 로컬에 저장한다.
 
     - LLM 비전 검사는 수행하지 않는다.
-    - 최종 저장 파일명은 sign_toilet.png 하나만 사용하려고 시도한다.
+    - 최종 저장 파일명은 goods_key_ring.png 하나만 사용하려고 시도한다.
     """
 
     # 1) 참고 이미지 URL/경로 추출
@@ -268,8 +280,8 @@ def create_sign_toilet(
     # 3) Replicate에 넘길 공통 input 구성
     prompt = seedream_input.get("prompt", "")
     size = seedream_input.get("size", "custom")
-    width = int(seedream_input.get("width", SIGN_TOILET_WIDTH))
-    height = int(seedream_input.get("height", SIGN_TOILET_HEIGHT))
+    width = int(seedream_input.get("width", GOODS_KEY_RING_WIDTH))
+    height = int(seedream_input.get("height", GOODS_KEY_RING_HEIGHT))
 
     # 최종 생성 이미지는 항상 1장만 요청
     max_images = 1
@@ -291,7 +303,7 @@ def create_sign_toilet(
         "sequential_image_generation": sequential_image_generation,
     }
 
-    model_name = os.getenv("SIGN_TOILET_MODEL", "bytedance/seedream-4")
+    model_name = os.getenv("GOODS_KEY_RING_MODEL", "bytedance/seedream-4")
 
     output = None
     last_err: Exception | None = None
@@ -303,21 +315,22 @@ def create_sign_toilet(
             break
         except ModelError as e:
             msg = str(e)
+            # Seedream 특유의 일시적인 에러 코드 케이스 한 번 더 시도
             if "Prediction interrupted" in msg or "code: PA" in msg:
                 last_err = e
                 time.sleep(1.0)
                 continue
             raise RuntimeError(
-                f"Seedream model error during sign toilet generation: {e}"
+                f"Seedream model error during goods key_ring generation: {e}"
             )
         except Exception as e:
             raise RuntimeError(
-                f"Unexpected error during sign toilet generation: {e}"
+                f"Unexpected error during goods key_ring generation: {e}"
             )
 
     if output is None:
         raise RuntimeError(
-            f"Seedream model error during sign toilet generation after retries: {last_err}."
+            f"Seedream model error during goods key_ring generation after retries: {last_err}."
         )
 
     if not (isinstance(output, (list, tuple)) and output):
@@ -329,7 +342,7 @@ def create_sign_toilet(
     if save_dir is not None:
         save_base = Path(save_dir)
     else:
-        save_base = _get_sign_toilet_save_dir()
+        save_base = _get_goods_key_ring_save_dir()
     save_base.mkdir(parents=True, exist_ok=True)
 
     # 유틸로 한 번 저장
@@ -338,11 +351,11 @@ def create_sign_toilet(
     )
     tmp_path = Path(tmp_image_path)
 
-    # 최종 파일명은 가능한 한 sign_toilet.png 로 통일
-    final_filename = "sign_toilet.png"
+    # 최종 파일명은 가능한 한 goods_key_ring.png 로 통일
+    final_filename = "goods_key_ring.png"
     final_path = save_base / final_filename
 
-    # 이미 유틸이 sign_toilet.png 라는 이름으로 저장했다면 그대로 사용
+    # 이미 유틸이 goods_key_ring.png 라는 이름으로 저장했다면 그대로 사용
     if tmp_path.name != final_filename:
         # 다른 이름으로 저장된 경우에만 rename
         if final_path.exists():
@@ -371,7 +384,7 @@ def create_sign_toilet(
 # -------------------------------------------------------------
 # 7) editor → DB 경로용 헬퍼 (p_no 사용)
 # -------------------------------------------------------------
-def run_sign_toilet_to_editor(
+def run_goods_key_ring_to_editor(
     p_no: int,
     mascot_image_url: str,
     festival_name_ko: str,
@@ -387,57 +400,58 @@ def run_sign_toilet_to_editor(
         festival_location_ko
 
     동작:
-      1) write_sign_toilet(...) 로 Seedream 입력용 seedream_input 생성
-      2) create_sign_toilet(..., save_dir=표지판 저장 디렉터리) 로
-         실제 화장실 안내 표지 이미지를 생성하고,
-         acc-front/public/data/promotion/<member_no>/<p_no>/sign 아래에 저장한다.
+      1) write_goods_key_ring(...) 로 Seedream 입력용 seedream_input 생성
+      2) create_goods_key_ring(..., save_dir=키링 굿즈 저장 디렉터리) 로
+         실제 키링 굿즈 이미지를 생성하고,
+         acc-front/public/data/promotion/<member_no>/<p_no>/goods 아래에
+         goods_key_ring.png 파일명으로 저장한다.
       3) DB 저장용 메타 정보 딕셔너리를 반환한다.
 
     반환:
       {
-        "db_file_type": "sign_toilet",
+        "db_file_type": "goods_key_ring",
         "type": "image",
-        "db_file_path": "C:\\...\\acc-front\\public\\data\\promotion\\M000001\\{p_no}\\sign\\sign_toilet.png",
-        "type_ko": "화장실 표지판"
+        "db_file_path": "C:\\...\\acc-front\\public\\data\\promotion\\M000001\\{p_no}\\goods\\goods_key_ring.png",
+        "type_ko": "키링 굿즈"
       }
     """
 
     # 1) 프롬프트 생성
-    seedream_input = write_sign_toilet(
+    seedream_input = write_goods_key_ring(
         mascot_image_url=mascot_image_url,
         festival_name_ko=festival_name_ko,
         festival_period_ko=festival_period_ko,
         festival_location_ko=festival_location_ko,
     )
 
-    # 2) 저장 디렉터리: acc-front/public/data/promotion/<member_no>/<p_no>/sign
+    # 2) 저장 디렉터리: acc-front/public/data/promotion/<member_no>/<p_no>/goods
     member_no = os.getenv("ACC_MEMBER_NO", "M000001")
     front_root = PROJECT_ROOT.parent / "acc-front"
-    sign_dir = (
+    goods_dir = (
         front_root
         / "public"
         / "data"
         / "promotion"
         / member_no
         / str(p_no)
-        / "sign"
+        / "goods"
     )
-    sign_dir.mkdir(parents=True, exist_ok=True)
+    goods_dir.mkdir(parents=True, exist_ok=True)
 
     # 3) 이미지 생성
-    create_result = create_sign_toilet(
+    create_result = create_goods_key_ring(
         seedream_input,
-        save_dir=sign_dir,
-        prefix="sign_toilet_",
+        save_dir=goods_dir,
+        prefix="goods_key_ring_",
     )
 
     db_file_path = str(create_result["image_path"])
 
     result: Dict[str, Any] = {
-        "db_file_type": SIGN_TOILET_TYPE,  # "sign_toilet"
+        "db_file_type": GOODS_KEY_RING_TYPE,  # "goods_key_ring"
         "type": "image",
         "db_file_path": db_file_path,
-        "type_ko": SIGN_TOILET_PRO_NAME,  # "화장실 표지판"
+        "type_ko": GOODS_KEY_RING_PRO_NAME,  # "키링 굿즈"
     }
 
     return result
@@ -448,16 +462,18 @@ def run_sign_toilet_to_editor(
 # -------------------------------------------------------------
 def main() -> None:
     """
-    python app/service/sign/make_sign_toilet.py
+    python app/service/goods/make_goods_key_ring.py
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
     p_no = 10
 
-    mascot_image_url = r"C:\final_project\ACC\acc-ai\app\data\mascot\cheonan.png"
-    festival_name_ko = "2025 천안흥타령축제"
-    festival_period_ko = "2024.09.24 ~ 2024.09.28"
-    festival_location_ko = "천안종합운동장 및 천안시 일원"
+    mascot_image_url = r"C:\final_project\ACC\acc-ai\app\data\mascot\kimcheon.png"
+    festival_name_ko = "2025 김천김밥축제"
+    festival_period_ko = "2024.10.25 ~ 2024.10.26"
+    festival_location_ko = "김천시 직지문화공우너 및 사명대사공원 일원"
+
+
 
     # 2) 필수값 체크
     missing = []
@@ -479,7 +495,7 @@ def main() -> None:
         return
 
     # 3) 실제 실행 (Dict 리턴)
-    result = run_sign_toilet_to_editor(
+    result = run_goods_key_ring_to_editor(
         p_no=p_no,
         mascot_image_url=mascot_image_url,
         festival_name_ko=festival_name_ko,
