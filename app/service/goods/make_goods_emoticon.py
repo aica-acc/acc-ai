@@ -10,7 +10,8 @@ app/service/goods/make_goods_emoticon.py
   2) 마스코트 이미지를 시각적으로 분석해서 축제 테마/무드 정보를 영어로 만든 뒤
   3) 축제명/테마를 이용해 "여러 상황에서 쓸 수 있는 마스코트 이모티콘 세트" 프롬프트를 조립한다. (write_goods_emoticon)
   4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 한 번 생성하고 저장한다. (create_goods_emoticon)
-  5) run_goods_emoticon_to_editor(...) 로 p_no 기준 acc-front/public/data/promotion 경로에
+  5) run_goods_emoticon_to_editor(...) 로 p_no 기준
+     FRONT_PROJECT_ROOT/public/data/promotion 경로에
      생성 이미지를 저장하고, DB 저장용 메타 정보를 반환한다.
   6) python make_goods_emoticon.py 로 단독 실행할 수 있다.
 
@@ -29,6 +30,8 @@ DB 저장용 리턴 예시:
 - GOODS_EMOTICON_MODEL       : (선택) 기본값 "bytedance/seedream-4"
 - GOODS_EMOTICON_SAVE_DIR    : (선택) create_goods_emoticon 단독 사용 시 저장 경로
 - ACC_MEMBER_NO              : (선택) 프로모션 파일 경로용 회원번호, 기본값 "M000001"
+- FRONT_PROJECT_ROOT         : (선택) acc-front 또는 acc-frontend 루트 경로
+                               예) C:\\final_project\\ACC\\acc-front
 """
 
 from __future__ import annotations
@@ -59,6 +62,17 @@ GOODS_EMOTICON_HEIGHT = 2048
 
 env_path = PROJECT_ROOT / ".env"
 load_dotenv(env_path)
+
+# ✅ FRONT_PROJECT_ROOT 환경변수 기반 프론트 루트 경로 계산
+_front_env = os.getenv("FRONT_PROJECT_ROOT")
+if _front_env:
+    _front_path = Path(_front_env)
+    if not _front_path.is_absolute():
+        _front_path = PROJECT_ROOT / _front_path
+    FRONT_PROJECT_ROOT = _front_path
+else:
+    # 환경변수 없으면 기존 acc-front 하드코딩 경로로 백업
+    FRONT_PROJECT_ROOT = PROJECT_ROOT.parent / "acc-front"
 
 # app 패키지 import를 위해 루트를 sys.path에 추가
 if str(PROJECT_ROOT) not in sys.path:
@@ -395,7 +409,7 @@ def run_goods_emoticon_to_editor(
       1) write_goods_emoticon(...) 로 Seedream 입력용 seedream_input 생성
       2) create_goods_emoticon(..., save_dir=이모티콘 굿즈 저장 디렉터리) 로
          실제 이모티콘 굿즈 이미지를 생성하고,
-         acc-front/public/data/promotion/<member_no>/<p_no>/goods 아래에
+         FRONT_PROJECT_ROOT/public/data/promotion/<member_no>/<p_no>/goods 아래에
          goods_emoticon.png 파일명으로 저장한다.
       3) DB 저장용 메타 정보 딕셔너리를 반환한다.
 
@@ -403,7 +417,7 @@ def run_goods_emoticon_to_editor(
       {
         "db_file_type": "goods_emoticon",
         "type": "image",
-        "db_file_path": "C:\\...\\acc-front\\public\\data\\promotion\\M000001\\{p_no}\\goods\\goods_emoticon.png",
+        "db_file_path": "<FRONT_PROJECT_ROOT>\\public\\data\\promotion\\M000001\\{p_no}\\goods\\goods_emoticon.png",
         "type_ko": "이모티콘 굿즈"
       }
     """
@@ -416,11 +430,10 @@ def run_goods_emoticon_to_editor(
         festival_location_ko=festival_location_ko,
     )
 
-    # 2) 저장 디렉터리: acc-front/public/data/promotion/<member_no>/<p_no>/goods
+    # 2) 저장 디렉터리: FRONT_PROJECT_ROOT/public/data/promotion/<member_no>/<p_no>/goods
     member_no = os.getenv("ACC_MEMBER_NO", "M000001")
-    front_root = PROJECT_ROOT.parent / "acc-front"
     goods_dir = (
-        front_root
+        FRONT_PROJECT_ROOT
         / "public"
         / "data"
         / "promotion"

@@ -17,7 +17,8 @@ Seedream 입력/프롬프트 생성 + 생성 이미지 저장 모듈.
      로고 프롬프트를 조립한다. (write_logo_illustration)
   6) 해당 JSON을 Replicate(Seedream)에 넘겨 (image_input 없이)
      실제 일러스트 로고 이미지를 생성하고 저장한다. (create_logo_illustration)
-  7) run_logo_illustration_to_editor(...) 로 p_no 기준 acc-front/public/data/promotion 경로에
+  7) run_logo_illustration_to_editor(...) 로 p_no 기준
+     FRONT_PROJECT_ROOT/public/data/promotion 경로에
      생성 이미지를 저장하고, DB 저장용 메타 정보를 반환한다.
   8) python make_logo_illustration.py 로 단독 실행할 수 있다.
 
@@ -43,6 +44,8 @@ DB 저장용 리턴 예시:
 - LOGO_ILLUSTRATION_MODEL         : (선택) 기본값 "bytedance/seedream-4"
 - LOGO_ILLUSTRATION_SAVE_DIR      : (선택) create_logo_illustration 단독 사용 시 저장 경로
 - ACC_MEMBER_NO                   : (선택) 프로모션 파일 경로용 회원번호, 기본값 "M000001"
+- FRONT_PROJECT_ROOT              : (선택) acc-front 또는 acc-frontend 루트 경로
+                                    예) C:\\final_project\\ACC\\acc-front
 """
 
 from __future__ import annotations
@@ -73,6 +76,17 @@ LOGO_ILLUST_HEIGHT_PX = 2048
 
 env_path = PROJECT_ROOT / ".env"
 load_dotenv(env_path)
+
+# ✅ FRONT_PROJECT_ROOT 환경변수 기반 프론트 루트 경로 계산
+_front_env = os.getenv("FRONT_PROJECT_ROOT")
+if _front_env:
+    _front_path = Path(_front_env)
+    if not _front_path.is_absolute():
+        _front_path = PROJECT_ROOT / _front_path
+    FRONT_PROJECT_ROOT = _front_path
+else:
+    # 환경변수 없으면 기존 acc-front 위치로 백업
+    FRONT_PROJECT_ROOT = PROJECT_ROOT.parent / "acc-front"
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -496,14 +510,14 @@ def run_logo_illustration_to_editor(
       1) write_logo_illustration(...) 로 Seedream 입력용 seedream_input 생성
       2) create_logo_illustration(..., save_dir=로고 저장 디렉터리) 로
          실제 일러스트 로고 이미지를 생성하고,
-         acc-front/public/data/promotion/<member_no>/<p_no>/logo/ 아래에 저장한다.
+         FRONT_PROJECT_ROOT/public/data/promotion/<member_no>/<p_no>/logo/ 아래에 저장한다.
       3) DB 저장용 메타 정보 딕셔너리를 반환한다.
 
     반환:
       {
         "db_file_type": "logo_illustration",
         "type": "image",
-        "db_file_path": "C:\\...\\acc-front\\public\\data\\promotion\\M000001\\{p_no}\\logo\\logo_illustration_....png",
+        "db_file_path": "<FRONT_PROJECT_ROOT>\\public\\data\\promotion\\M000001\\{p_no}\\logo\\logo_illustration_....png",
         "type_ko": "일러스트 로고"
       }
     """
@@ -516,11 +530,10 @@ def run_logo_illustration_to_editor(
         festival_location_ko=festival_location_ko,
     )
 
-    # 2) 저장 디렉터리: acc-front/public/data/promotion/<member_no>/<p_no>/logo
+    # 2) 저장 디렉터리: FRONT_PROJECT_ROOT/public/data/promotion/<member_no>/<p_no>/logo
     member_no = os.getenv("ACC_MEMBER_NO", "M000001")
-    front_root = PROJECT_ROOT.parent / "acc-front"
     logo_dir = (
-        front_root
+        FRONT_PROJECT_ROOT
         / "public"
         / "data"
         / "promotion"
@@ -595,12 +608,12 @@ def main() -> None:
 
     # stdout으로는 값 4개만 딱 찍어주기 (타이포그래피와 동일 포맷)
     db_file_type = result.get("db_file_type", "")
-    type_ = result.get("type", "")
+    type = result.get("type", "")
     db_file_path = result.get("db_file_path", "")
     type_ko = result.get("type_ko", "")
 
     print(db_file_type)
-    print(type_)
+    print(type)
     print(db_file_path)
     print(type_ko)
 
