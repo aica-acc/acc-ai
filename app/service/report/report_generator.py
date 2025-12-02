@@ -117,7 +117,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
             "x": [
                 {{
                     "id": 1,
-                    "text": "트위터용 짧은 홍보글 (RT 이벤트 등)",
+                    "text": "트위터용 짧은 홍보글과 굿즈 소개(키링, 이모티콘등)",
                     "author": "@official_account"
                 }}
             ],
@@ -125,7 +125,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
                 {{
                     "id": 1,
                     "title": "페이스북용 정보성 제목",
-                    "content": "상세하고 친절한 축제 안내글",
+                    "content": "상세하고 친절한 축제 안내글. 특히 현장에 예쁜 굿즈(키링, 이모티콘, 인형 등)가 준비되어 있다는 점을 강조해서 작성.",
                     "link": "https://festival.geoje.go.kr"
                 }}
             ]
