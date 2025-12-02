@@ -78,6 +78,17 @@ else:
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+
+# -------------------------------------------------------------
+# 콘솔 진행 상황 로그 유틸
+# -------------------------------------------------------------
+def _log_progress(message: str) -> None:
+    """
+    화장실 안내 표지 생성용 진행 로그를 콘솔에 출력한다.
+    """
+    print(f"[sign_toilet] {message}", flush=True)
+
+
 # -------------------------------------------------------------
 # 기존 road_banner 유틸 재사용
 # -------------------------------------------------------------
@@ -172,10 +183,19 @@ def write_sign_toilet(
       (실제 이미지 안 텍스트에는 축제명은 사용하지 않는다.)
     """
 
+    _log_progress("1) 화장실 표지판 Seedream 입력 생성 시작...")
+    _log_progress(f"   - 원본 한글 축제명: {festival_name_ko}")
+    _log_progress(f"   - 기간(ko): {festival_period_ko}")
+    _log_progress(f"   - 장소(ko): {festival_location_ko}")
+    _log_progress(f"   - 마스코트 이미지: {mascot_image_url}")
+
     # 1) 회차 / 축제명 분리 (회차는 번역 품질 향상을 위한 용도로만 사용)
-    _, pure_name_ko = _split_festival_count_and_name(festival_name_ko)
+    festival_count, pure_name_ko = _split_festival_count_and_name(festival_name_ko)
+    _log_progress(f"   - 회차 추출: {festival_count}")
+    _log_progress(f"   - 회차 제거 후 한글 축제명: {pure_name_ko}")
 
     # 2) 한글 축제 정보 → 영어 번역 (테마/씬 묘사용)
+    _log_progress("2) 한글 축제 정보를 영어로 번역 중...")
     translated = _translate_festival_ko_to_en(
         festival_name_ko=pure_name_ko,
         festival_period_ko=festival_period_ko,
@@ -184,21 +204,31 @@ def write_sign_toilet(
     name_en = translated["name_en"]
     period_en = translated["period_en"]
     location_en = translated["location_en"]
+    _log_progress(
+        f"   - 번역 결과: name_en='{name_en}', period_en='{period_en}', location_en='{location_en}'"
+    )
 
     # 3) 마스코트(참고 이미지) 분석 → 축제 씬/무드 묘사 얻기
+    _log_progress("3) 마스코트 이미지 기반 축제 씬/무드 분석 중...")
     scene_info = _build_scene_phrase_from_poster(
         poster_image_url=mascot_image_url,
         festival_name_en=name_en,
         festival_period_en=period_en,
         festival_location_en=location_en,
     )
+    base_scene_en = scene_info["base_scene_en"]
+    details_phrase_en = scene_info["details_phrase_en"]
+    _log_progress(f"   - base_scene_en: '{base_scene_en[:60]}...'")
+    _log_progress(f"   - details_phrase_en: '{details_phrase_en[:60]}...'")
 
     # 4) 최종 프롬프트 조립
+    _log_progress("4) 화장실 안내 표지용 프롬프트 조립 중...")
     prompt = _build_sign_toilet_prompt_en(
         festival_name_en=name_en,
-        base_scene_en=scene_info["base_scene_en"],
-        details_phrase_en=scene_info["details_phrase_en"],
+        base_scene_en=base_scene_en,
+        details_phrase_en=details_phrase_en,
     )
+    _log_progress("   - 프롬프트 조립 완료.")
 
     # 5) Seedream / Replicate 입력 JSON 구성
     seedream_input: Dict[str, Any] = {
@@ -223,6 +253,7 @@ def write_sign_toilet(
         "festival_location_ko": festival_location_ko,
     }
 
+    _log_progress("✔ Seedream 입력 JSON 생성 완료.")
     return seedream_input
 
 
@@ -266,6 +297,8 @@ def create_sign_toilet(
     - 최종 저장 파일명은 sign_toilet.png 하나만 사용하려고 시도한다.
     """
 
+    _log_progress("6) Seedream 모델 호출 및 화장실 표지판 이미지 생성 단계 진입...")
+
     # 1) 참고 이미지 URL/경로 추출
     image_input = seedream_input.get("image_input") or []
     if not (isinstance(image_input, list) and image_input):
@@ -275,9 +308,12 @@ def create_sign_toilet(
     if not image_url:
         raise ValueError("image_input[0].url 이 비어 있습니다.")
 
+    _log_progress(f"   - 참고 이미지 로딩 중: {image_url}")
+
     # 2) 참고 이미지 로딩 (URL + 로컬 파일 모두 지원)
     img_bytes = _download_image_bytes(image_url)
     image_file = BytesIO(img_bytes)
+    _log_progress("   - 참고 이미지 로딩 완료.")
 
     # 3) Replicate에 넘길 공통 input 구성
     prompt = seedream_input.get("prompt", "")
@@ -306,6 +342,9 @@ def create_sign_toilet(
     }
 
     model_name = os.getenv("SIGN_TOILET_MODEL", "bytedance/seedream-4")
+    _log_progress(
+        f"   - Seedream 입력 설정: model='{model_name}', size={width}x{height}, max_images={max_images}"
+    )
 
     output = None
     last_err: Exception | None = None
@@ -313,23 +352,29 @@ def create_sign_toilet(
     # 모델 호출은 최대 3번까지 재시도 (네트워크/모델 에러 대비)
     for attempt in range(3):
         try:
+            _log_progress(f"   - Seedream 호출 시도 {attempt + 1}/3 ...")
             output = replicate.run(model_name, input=replicate_input)
+            _log_progress("   - Seedream 호출 성공, 결과 수신 완료.")
             break
         except ModelError as e:
             msg = str(e)
+            _log_progress(f"   - Seedream ModelError 발생: {msg}")
             if "Prediction interrupted" in msg or "code: PA" in msg:
                 last_err = e
+                _log_progress("   - 일시적인 오류로 판단, 1초 후 재시도...")
                 time.sleep(1.0)
                 continue
             raise RuntimeError(
                 f"Seedream model error during sign toilet generation: {e}"
             )
         except Exception as e:
+            _log_progress(f"   - Seedream 호출 중 예기치 못한 오류: {e}")
             raise RuntimeError(
                 f"Unexpected error during sign toilet generation: {e}"
             )
 
     if output is None:
+        _log_progress("   - 3회 시도 후에도 Seedream 호출 실패.")
         raise RuntimeError(
             f"Seedream model error during sign toilet generation after retries: {last_err}."
         )
@@ -345,6 +390,8 @@ def create_sign_toilet(
     else:
         save_base = _get_sign_toilet_save_dir()
     save_base.mkdir(parents=True, exist_ok=True)
+
+    _log_progress(f"7) 생성 이미지 저장 디렉터리 준비 완료: {save_base}")
 
     # 유틸로 한 번 저장
     tmp_image_path, tmp_image_filename = _save_image_from_file_output(
@@ -365,6 +412,8 @@ def create_sign_toilet(
     else:
         # 같은 이름이면 그대로 final_path 로 취급
         final_path = tmp_path
+
+    _log_progress(f"✔ 화장실 표지판 이미지 저장 완료: {final_path}")
 
     return {
         "size": size,
@@ -416,15 +465,26 @@ def run_sign_toilet_to_editor(
       }
     """
 
+    _log_progress("==============================================")
+    _log_progress("▶ 화장실 표지판 생성(run_sign_toilet_to_editor) 시작")
+    _log_progress(f"   - p_no={p_no}")
+    _log_progress(f"   - mascot_image_url={mascot_image_url}")
+    _log_progress(f"   - festival_name_ko={festival_name_ko}")
+    _log_progress(f"   - festival_period_ko={festival_period_ko}")
+    _log_progress(f"   - festival_location_ko={festival_location_ko}")
+
     # 1) 프롬프트 생성
+    _log_progress("▶ 1단계: Seedream 입력 JSON 생성 시작")
     seedream_input = write_sign_toilet(
         mascot_image_url=mascot_image_url,
         festival_name_ko=festival_name_ko,
         festival_period_ko=festival_period_ko,
         festival_location_ko=festival_location_ko,
     )
+    _log_progress("▶ 1단계 완료: Seedream 입력 JSON 생성")
 
     # 2) 저장 디렉터리: FRONT_PROJECT_ROOT/public/data/promotion/<member_no>/<p_no>/sign
+    _log_progress("▶ 2단계: 저장 디렉터리 생성/확인 중...")
     member_no = os.getenv("ACC_MEMBER_NO", "M000001")
     sign_dir = (
         FRONT_PROJECT_ROOT
@@ -436,15 +496,21 @@ def run_sign_toilet_to_editor(
         / "sign"
     )
     sign_dir.mkdir(parents=True, exist_ok=True)
+    _log_progress(f"   - 저장 디렉터리: {sign_dir}")
 
     # 3) 이미지 생성
+    _log_progress(
+        "▶ 3단계: Seedream 모델 호출 및 화장실 표지판 이미지 생성 시작 (시간이 조금 걸릴 수 있습니다)..."
+    )
     create_result = create_sign_toilet(
         seedream_input,
         save_dir=sign_dir,
         prefix="sign_toilet_",
     )
+    _log_progress("▶ 3단계 완료: 이미지 생성 및 저장 완료.")
 
     db_file_path = str(create_result["image_path"])
+    _log_progress(f"▶ 4단계: 최종 DB 저장 경로 확정 → {db_file_path}")
 
     result: Dict[str, Any] = {
         "db_file_type": SIGN_TOILET_TYPE,  # "sign_toilet"
@@ -452,6 +518,9 @@ def run_sign_toilet_to_editor(
         "db_file_path": db_file_path,
         "type_ko": SIGN_TOILET_PRO_NAME,  # "화장실 표지판"
     }
+
+    _log_progress("✔ 화장실 표지판 생성 완료. DB 메타 정보 리턴.")
+    _log_progress("==============================================")
 
     return result
 
@@ -465,12 +534,12 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    p_no = 10
+    p_no = 11
 
-    mascot_image_url = r"C:\final_project\ACC\acc-ai\app\data\mascot\cheonan.png"
-    festival_name_ko = "2025 천안흥타령축제"
-    festival_period_ko = "2024.09.24 ~ 2024.09.28"
-    festival_location_ko = "천안종합운동장 및 천안시 일원"
+    mascot_image_url = r"C:\final_project\ACC\acc-ai\app\data\mascot\kimcheon.png"
+    festival_name_ko = "2025 김천김밥축제"
+    festival_period_ko = "2024.10.25 ~ 2024.10.26"
+    festival_location_ko = "김천시 직지문화공원 및 사명대사공원 일원"
 
     # 2) 필수값 체크
     missing = []
