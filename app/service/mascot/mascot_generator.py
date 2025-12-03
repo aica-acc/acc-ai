@@ -18,23 +18,78 @@ def create_mascot_prompt(user_theme, analysis_summary, poster_trend_report, stra
         analysis_str = json.dumps(analysis_summary, ensure_ascii=False)
 
         system_prompt = f"""
-        You are a world-class Character Designer. Design 4 distinct Mascot Character concepts for a festival.
+        You are a top-tier Character Designer specializing in **Korean-style festival mascots**.
 
-        [CRITICAL RULES]
-        1. **Mascot Aesthetics:** The image MUST visually function as a **festival mascot character**. 
-           - **Focus on the character design.** Cute, friendly, or symbolic characters suitable for a festival.
-           - **Do NOT describe a complex background.** Keep the background simple or transparent-friendly.
-        2. **English Only:** `visual_prompt` MUST be in English.
-        3. **No Text:** Do NOT include text in the visual prompt unless it's part of the character's clothing or accessories (and keep it minimal).
-        
-        [JSON FORMAT]
+        Your task:
+        Generate 4 **unique mascot character concepts** where the *style itself is dynamically chosen by you*,
+        as long as it matches Korean public taste.
+
+        ====================================================================
+        🎨 [STYLE GENERATION RULES — LLM decides the style]
+        ====================================================================
+        You MUST create the style_name yourself for each prompt.
+
+        ✔ 스타일 특징 예시(이런 방향이면 OK):
+        - 부드럽고 동글동글한 한국형 캐릭터 감성
+        - Kakao Friends / Line Friends / BT21 계열의 귀엽고 단순한 형태
+        - Soft 3D, Webtoon Flat, Warm Pastel, Clay Style 등은 사용 가능
+        - 단, 스타일 이름은 무작위 + 창의적으로 만들 것
+        예) “Warm Puffy 3D Mascot”, “Soft Bubble Toon”, “Creamy Sticker Style”, “Pastel Mini-Pet Style”
+
+        ❌ 다음 금지:
+        - Pixar/Disney 스타일
+        - Marvel, DC, realistic western cartoon style
+        - overly American cute style
+        - realism, hyper-real textures
+        - muscular body types
+
+        ====================================================================
+        🧸 [CHARACTER DESIGN RULES]
+        ====================================================================
+        1. Exactly **ONE mascot character** (no friends, no groups)
+        2. **Full-body**, centered, simple pose
+        3. **Facial emotion must be friendly, approachable**
+        4. No props unless essential to the concept (max 1 small item allowed)
+        5. Do NOT add poster layout, text, titles, or decorations
+
+        ====================================================================
+        🧼 [BACKGROUND]
+        ====================================================================
+        - MUST be pure white (#FFFFFF)
+        - No gradients, shadows, objects, sparkles, lights, snow, or scenery
+
+        ====================================================================
+        🈲 [ABSOLUTE FORBIDDEN CONTENT]
+        ====================================================================
+        no poster, no typography, no title, no date, no icons, no tags, no stickers around
+        no foreign objects, no Christmas elements unless explicitly required
+        no scenery, no backgrounds, no additional characters
+        no hands holding items unless conceptually necessary
+
+        ====================================================================
+        📝 [VISUAL PROMPT FORMAT]
+        ====================================================================
+        - English only
+        - Describe:
+            - Species / concept identity
+            - Outfit related to the provided festival theme
+            - Color palette
+            - Facial expression
+            - Pose
+            - Unique Korean-style charm
+        - At the END ALWAYS append:
+        "full body, centered, pure white background, no text, no logo, no objects, Korean cute style"
+
+        ====================================================================
+        📦 [JSON OUTPUT FORMAT]
+        ====================================================================
         {{
             "master_prompt": {{
                 "prompt_options": [
                     {{
-                        "style_name": "Concept Name (e.g., Cute Animal, Robot, Traditional)",
-                        "text_content": {{ "title": "", "date_location": "" }}, 
-                        "visual_prompt": "A cute mascot character for... (English description)" 
+                        "style_name": "LLM generated style name",
+                        "text_content": {{"title": "", "date_location": ""}},
+                        "visual_prompt": "Detailed mascot-only prompt following ALL rules"
                     }}
                 ]
             }},
@@ -61,3 +116,22 @@ def create_mascot_prompt(user_theme, analysis_summary, poster_trend_report, stra
     except Exception as e:
         print(f"    ❌ 마스코트 프롬프트 생성 오류: {e}")
         return {"error": str(e)}
+
+def build_mascot_image_prompt(base_prompt: str) -> str:
+    prefix = (
+        "High-quality Korean-style cute mascot character illustration, "
+        "full body, centered, standing, pure white background, "
+        "soft lighting, round shapes, warm and friendly expression, "
+        "Kakao Friends / Line Friends inspired mood (but NOT copying), "
+        "clean sticker-style rendering. "
+    )
+    
+    negative = (
+        "no poster, no flyer, no layout, no title, no text, no logo, "
+        "no western cartoon style, no Pixar, no Disney, no Marvel, "
+        "no Christmas elements, no presents, no decorations, "
+        "no background objects, no scenery, no props, "
+        "no additional characters, no crowd, no icons, no symbols."
+    )
+    
+    return f"{prefix}{base_prompt}. {negative}"
