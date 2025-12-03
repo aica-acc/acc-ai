@@ -16,7 +16,7 @@ app/service/subway/make_subway_inner.py
 결과 JSON 형태 (editor용 최소 정보):
 
 {
-  "type": "subway_innner",
+  "type": "subway_inner",
   "pro_name": "지하철 차내액자",
   "festival_name_ko": "제7회 담양산타축제",
   "festival_period_ko": "2025.12.24 ~ 2025.12.25",
@@ -52,7 +52,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_ROOT = PROJECT_ROOT / "app" / "data"
 
 # 지하철 차내액자 고정 스펙
-SUBWAY_INNER_TYPE = "subway_innner"  # 사용자가 지정한 철자 그대로
+SUBWAY_INNER_TYPE = "subway_inner"  # 사용자가 지정한 철자 그대로
 SUBWAY_INNER_PRO_NAME = "지하철 차내액자"
 SUBWAY_INNER_WIDTH_PX = 1446
 SUBWAY_INNER_HEIGHT_PX = 1024
