@@ -55,15 +55,15 @@ FRONT_PROJECT_ROOT = os.getenv("FRONT_PROJECT_ROOT")
 if not FRONT_PROJECT_ROOT:
     raise ValueError("FRONT_PROJECT_ROOT 가 .env에 설정되어 있지 않습니다.")
 
-
+api_key = os.getenv("GEMINI_API_KEY")
 veo_client = genai.Client(api_key=GEMINI_API_KEY)
 openai_client = OpenAI()
+
+#이건 바꿔야함 
+test_layout_image_url = "data/promotion/M000001/25/poster/good_2.jpg"
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+# 환경설정 모델들
 VEO_MODEL = "veo-3.1-generate-preview"
-
-
-
-# 환경설정 
-api_key = os.getenv("GEMINI_API_KEY")
 MODEL = "veo-3.1-generate-preview" # Veo 3.1 모델 이름
 # ============================================================
 # 0. 환경설정 및 PATH
@@ -130,9 +130,8 @@ from app.service.logo.make_logo_illustration import run_logo_illustration_to_edi
 from app.service.logo.make_logo_typography import run_logo_typography_to_editor
 
 # === Poster 파생 (예시 import 경로) ===
-# from app.service.poster.make_poster_cardnews import run_poster_cardnews_to_editor
+from app.service.leaflet.make_leaflet_image import run_leaflet_to_editor
 from app.service.video.make_poster_video import run_poster_video_to_editor
-# from app.service.poster.make_live_poster import run_live_poster_to_editor
 
 # === Mascot 파생 (예시 import 경로) ===
 from app.service.sign.make_sign_parking import run_sign_parking_to_editor
@@ -208,12 +207,12 @@ MSHS_TYPES = {
     "goods_emoticon",
 }
 
-LIVE_TYPES = {"live_poster"}
 MASCOT_VIDEO_TYPES = {"mascot_video"}
 POSTER_VIDEO_TYPES = {"poster_video"}
 CARDNEWS_TYPES = {"poster_cardnews"}
 ETC_VIDEO_TYPES = {"etc_video"}
 NEWS_TYPES = {"news"}  # pass
+LEAFLET_TYPES = {"leaflet"}  # pass
 
 
 # ============================================================
@@ -400,12 +399,16 @@ def build_editor_templates(payload: EditorBuildRequest):
                 )
 
             # --- LIVE ---
-            elif t in LIVE_TYPES:
+            elif t in LEAFLET_TYPES:
                 result = fn(
                     project_id=payload.pNo,
-                    poster_image_path=poster_image_url,
-                    concept_text="A cinematic and dynamic festival poster sequence",
-                    visual_keywords="high quality, 4k, highly detailed, lighting, atmosphere"
+                    festival_name_ko=festival_name_ko,
+                    festival_period_ko=festival_period_ko,
+                    festival_location_ko=festival_location_ko,
+                    program_name=program_name,
+                    concept_description=concept_description,
+                    poster_image_url=poster_image_url,
+                    layout_ref_image_url=test_layout_image_url
                 )
 
             # --- Mascot Video ---
