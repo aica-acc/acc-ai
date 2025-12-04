@@ -41,94 +41,160 @@ openai_client = OpenAI()   # OPENAI_API_KEY 는 환경변수로 자동 인식됨
 LEAFLET_SYSTEM_PROMPT = """
 You are a professional festival leaflet prompt designer.
 
-## Goal
+## GOAL
 
 Your job is to use:
 - IMAGE 1: a FESTIVAL POSTER style reference,
-- IMAGE 2: a LEAFLET LAYOUT reference,
+- IMAGE 2: a LEAFLET / TRIFOLD layout reference,
 - and FESTIVAL METADATA in JSON (Korean name, period, location, concept, program list),
 
 to generate ONE detailed English prompt for the model
 `google/nano-banana-pro` on Replicate that will:
 
-- keep the illustration STYLE and color feeling of IMAGE 1,
-- adopt the overall multi-column LAYOUT structure of IMAGE 2,
-- and render a fully finished leaflet image with real, readable Korean text
-  for the festival title, period, location, and program information.
+- keep the illustration STYLE, atmosphere, and color feeling of IMAGE 1,
+- adopt the overall multi-panel LEAFLET structure of IMAGE 2
+  (like a real printed Korean festival brochure),
+- and render a fully finished leaflet image with **real, readable Korean text**
+  for the festival title, period, location, programs, schedule, and basic guide info.
 
 This leaflet will be used as-is. There will be NO manual text editing afterwards,
 so the Korean text must be sharp, accurate, and clearly legible.
+The composition must feel like an actual local government festival leaflet,
+not like a simple poster collage.
 
 ---
 
-## How to use the two reference images
+## HOW TO USE THE TWO REFERENCE IMAGES
 
 1. Reference images
+
    - The image model receives TWO separate reference images:
      - First reference image (index 0): festival poster style reference (Image 1).
-     - Second reference image (index 1): leaflet layout reference (Image 2).
-   - In your prompt, you MUST explicitly describe them as:
-     - "the first reference image" = style and mood reference,
-     - "the second reference image" = layout and four-panel structure reference.
-   - The generated leaflet should be a new single 16:9 canvas, not a collage.
+     - Second reference image (index 1): leaflet layout / trifold reference (Image 2).
 
-2. Layout requirements (four-panel leaflet)
-   - The leaflet MUST be designed as four vertical panels inside a 16:9 canvas.
+   - In your prompt, you MUST explicitly describe:
+     - "the first reference image" = style, color palette, overall festive mood.
+     - "the second reference image" = layout, multi-panel brochure structure.
+
+   - The generated leaflet must be a **single 16:9 canvas**,
+     NOT a collage of multiple separate images.
+
+2. Overall layout: four-panel leaflet in 16:9
+
+   - Design the leaflet as **four vertical panels** inside a 16:9 horizontal canvas.
    - Each panel has equal width and the same height.
-   - Use thin but clear vertical separators between panels.
-   - Assign roles:
-     - Panel 1 (left): main hero visual + big Korean festival title and a short concept line.
-     - Panel 2: key programs list in Korean.
-     - Panel 3: schedule / timetable in Korean.
-     - Panel 4 (right): venue, location, transportation info in Korean,
-       plus small icons or a simplified map.
+   - Use thin but clear vertical separators between panels,
+     similar to a folded paper leaflet.
+   - Keep a small outer margin so it looks like a printed brochure,
+     not edge-to-edge bleed.
 
-3. Use of festival metadata (Korean text)
-   - You MUST use the Korean strings from the JSON exactly as they are:
-     - `festival_name_ko` for the main title (large Korean text).
-     - `festival_period_ko` near the title or in the schedule area.
-     - `festival_location_ko` in the map/info panel.
-   - For the `program_name` list:
-     - Choose about 3–5 items and render them as bullet-like lines in Korean
-       in the programs panel.
-   - Do NOT translate Korean into English.
-   - Do NOT invent fake program names or change the given Korean phrases.
+3. Panel roles and detailed content
+
+   **Panel 1 (left cover) – 메인 표지**
+
+   - Large hero illustration following the style and mood of the first reference image.
+   - Big Korean festival title using `festival_name_ko`.
+   - Under the title, show the festival period using `festival_period_ko`.
+   - Optionally add a very short English subtitle for the festival name.
+   - Add one short Korean concept line summarizing the festival atmosphere,
+     based on `concept_description`.
+
+   **Panel 2 – 주요 프로그램 / 하이라이트 소개**
+
+   - Section title like “주요 프로그램” in Korean.
+   - Use `program_name` list as the core items.
+   - You may expand each item with a short Korean description line.
+   - You may add 1–3 additional realistic program items in Korean
+     that match the festival concept (e.g. Santa parade, night view zone,
+     photo zone, family experience, etc.).
+   - Use bullet-style layout or small icons to make it look like a real leaflet.
+
+   **Panel 3 – 일정표 및 이벤트 안내**
+
+   - Section title like “축제 일정표” or “프로그램 일정”.
+   - Draw a clear Korean timetable-style table:
+     - Left column: 날짜 또는 요일.
+     - Middle/right columns: 시간대와 프로그램 이름.
+   - It does not need to be historically accurate; you may create a realistic schedule
+     based on `program_name` and the concept.
+   - You may add a small boxed area for “이벤트 안내” or “할인 정보” in Korean,
+     similar to the third sample leaflet:
+     - e.g. shuttle, discount for local shops, special night event, etc.
+
+   **Panel 4 (right) – 장소 · 교통 · 안내 정보**
+
+   - Section title like “장소 및 교통 안내” in Korean.
+   - Show the location using `festival_location_ko` near the top.
+   - Include a simplified illustrated map area:
+     - Main festival zone, nearby landmarks, parking icons, shuttle icons.
+   - Add bullet points for:
+     - 셔틀버스 운행 안내 (times/route can be fictional but realistic).
+     - 주차장 위치 및 간단 안내.
+     - 연락처 또는 홈페이지 주소 (you may invent a plausible URL/phone number).
+   - Use small, neat icons (bus, car, map pin) with short Korean labels.
 
 ---
 
-## Text rendering rules (VERY IMPORTANT)
+## USE OF FESTIVAL METADATA (KOREAN TEXT)
 
-- The generated image must contain clear, readable Korean text.
-- The main title must show `festival_name_ko` exactly, with correct spacing.
+You MUST use the Korean strings from the JSON:
+
+- `festival_name_ko` → main title in Panel 1 (large Korean text).
+- `festival_period_ko` → period text in Panel 1 or Panel 3.
+- `festival_location_ko` → location text in Panel 4.
+
+For `program_name`:
+
+- Use them as the core program lines in Panel 2 and/or Panel 3.
+- You MAY:
+  - slightly rephrase or shorten them in Korean for better readability,
+  - and you MAY add extra realistic program names in Korean
+    that match the festival mood and concept.
+
+Do NOT translate Korean into English.
+Do NOT replace the festival name, period, or location with English.
+
+---
+
+## TEXT RENDERING RULES (VERY IMPORTANT)
+
+- The generated image must contain **clear, readable Korean text**.
+- The main title must show `festival_name_ko` exactly (correct spacing and spelling).
 - Period and location must show `festival_period_ko` and `festival_location_ko` exactly.
-- Program list should contain the original Korean program names as short lines.
-- An additional small English subtitle for the festival name is OPTIONAL:
-  - If used, place it below or above the Korean title in a smaller font.
+- Program list, schedule table, and guide information must be written in natural Korean.
+- English can appear only as small subtitles or secondary labels.
 
-- Fonts:
-  - Ask the model for clean, modern, festive fonts that handle Korean nicely
-    (no deformed or broken glyphs).
-  - Use high contrast between text and background
-    (for example, dark navy background with bright white or gold text).
+Fonts:
 
-- Do NOT let characters or decorations overlap the important text.
-- Do NOT fill tables or map areas with overwhelming text; keep them readable and organized.
+- Ask the model for clean, modern, festive fonts that support Korean properly
+  (no broken or deformed glyphs).
+- Use high contrast between text and background
+  (e.g. deep navy night sky background with bright warm text colors).
+- Use different font sizes and weights for hierarchy:
+  - large bold for title,
+  - medium for headings,
+  - smaller regular for body text and tables.
 
----
-
-## Visual & technical requirements
-
-- Aspect ratio: exactly 16:9, horizontal leaflet.
-- Four vertical panels with clear separators.
-- Style: follow the illustration style and color palette of the poster (first reference image).
-- Layout: follow the structure of the leaflet reference (second reference image),
-  but do not copy it exactly one-to-one.
-- Make the overall design feel festive, winter/Christmas themed,
-  and suitable for a real printed leaflet.
+Do NOT let characters or decorations overlap the important text.
+Keep tables, map, and program sections **organized and readable**, not cluttered.
 
 ---
 
-## Output
+## VISUAL & TECHNICAL REQUIREMENTS
+
+- Aspect ratio: exactly 16:9, horizontal.
+- Four vertical panels with clear separators and small outer margins.
+- Style: follow the illustration style and color palette of the first reference image
+  (warm winter night, festive lights, family-friendly).
+- Layout: follow the structure of the second reference image and
+  typical Korean festival brochures (like a tourism office leaflet),
+  but do not copy any single reference exactly.
+- The overall design must look like a professionally printed leaflet:
+  balanced typography, aligned columns, tables, and information blocks.
+
+---
+
+## OUTPUT FORMAT
 
 You must return ONLY JSON of the following form:
 
@@ -138,11 +204,12 @@ You must return ONLY JSON of the following form:
 
 - Do NOT include Korean in the JSON keys.
 - The `leaflet_prompt` must explicitly mention:
-  - that the first reference image is for style,
-  - that the second reference image is for layout,
-  - that the layout uses four vertical panels with specific roles,
-  - that the model must render real Korean text using the given strings
-    for title, period, location, and program names.
+  - that the first reference image is for style and festive mood,
+  - that the second reference image is for multi-panel leaflet layout,
+  - that the layout uses four vertical panels with the specific roles above,
+  - that the model must render **real Korean text** using the given strings
+    for title, period, location, and program names,
+    plus additional realistic Korean schedule and guide information.
 - Do NOT wrap the JSON in backticks or markdown.
 """
 
@@ -211,23 +278,25 @@ def generate_leaflet_prompt_from_metadata(
     programs_block = "\n".join(f"- {p}" for p in program_name)
 
     user_text = (
-        "You will design a single detailed prompt for google/nano-banana-pro on Replicate.\n"
+        "You will design a **single, very detailed prompt** for `google/nano-banana-pro` on Replicate.\n"
         "The image model will receive TWO reference images in the `image_input` array:\n"
         "- index 0 (first reference image): the festival poster style reference (Image 1).\n"
-        "- index 1 (second reference image): the leaflet layout reference (Image 2).\n\n"
-        "Use the first reference image for overall illustration style, colors, and mood.\n"
-        "Use the second reference image for the four-panel leaflet layout structure.\n\n"
-        "The final leaflet must be a finished 16:9 horizontal design with four vertical panels,\n"
-        "and it MUST include real, readable Korean text for:\n"
-        "- the festival title (festival_name_ko),\n"
-        "- the period (festival_period_ko),\n"
-        "- the location (festival_location_ko),\n"
-        "- and a short list of main programs from program_name.\n"
-        "Do not translate the Korean strings. Use them exactly as they appear in the metadata.\n\n"
+        "- index 1 (second reference image): the leaflet / brochure layout reference (Image 2).\n\n"
+        "The final output must look like a **real Korean festival leaflet** printed by a local government,\n"
+        "with four vertical panels inside a 16:9 canvas.\n\n"
+        "In your prompt, clearly instruct the model to:\n"
+        "- follow the illustration style, colors, and mood of the first reference image,\n"
+        "- follow the multi-panel leaflet layout structure of the second reference image,\n"
+        "- organize information into 4 panels: cover, programs, schedule, and map/transport guide,\n"
+        "- fill the leaflet with natural, readable Korean text based on the metadata.\n\n"
+        "The leaflet must feel dense with information but still clean and well-organized,\n"
+        "similar to an official tourism brochure, not like a simple poster.\n\n"
         "Festival metadata JSON:\n"
         f"{meta_json}\n\n"
-        "Program list:\n"
-        f"{programs_block}\n"
+        "Program list (raw Korean strings):\n"
+        f"\"\"\"\n{programs_block}\n\"\"\"\n"
+        "Use these Korean strings for the title, period, location, and core programs.\n"
+        "You may add extra realistic Korean program and schedule details that match the concept.\n"
     )
 
     resp = openai_client.chat.completions.create(
@@ -344,13 +413,13 @@ def run_leaflet_to_editor(
         leaflet_prompt=leaflet_prompt,
         poster_path=poster_path,
         layout_path=layout_path,
-        download_name=f"leaflet_nano_{pNo}.png",
+        download_name=f"leaflet_{pNo}.png",
     )
 
     # 4. FRONT public/data/... 로 이동
     front_root = Path(FRONT_PROJECT_ROOT)
     public_root = front_root / "public"
-    rel_dir = Path("data") / "promotion" / PROMOTION_CODE / pNo / "image"
+    rel_dir = Path("data") / "promotion" / PROMOTION_CODE / pNo / "leaflet"
     target_dir = public_root / rel_dir
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -359,7 +428,7 @@ def run_leaflet_to_editor(
     print(f"✅ 최종 리플렛 이미지 저장: {target_path}")
 
     db_rel_path = (
-        Path("data") / "promotion" / PROMOTION_CODE / pNo / "image" / "leaflet_nano.png"
+        Path("data") / "promotion" / PROMOTION_CODE / pNo / "leaflet" / "leaflet_nano.png"
     ).as_posix()
 
     result: Dict[str, Any] = {
@@ -383,15 +452,15 @@ if __name__ == "__main__":
     - 레이아웃: FRONT/public/data/promotion/M000001/25/poster/good_2.png (예시)
     """
 
-    test_poster_image_url = "data/promotion/M000001/25/poster/poster_1764735707_3.png"
-    test_layout_ref_url = "data/promotion/M000001/25/poster/good_2.jpg"
+    test_poster_image_url = "data/promotion/M000001/25/poster/poster_1764735670_2.png"
+    test_layout_ref_url = "data/promotion/M000001/25/poster/sample.png"
 
     try:
         result = run_leaflet_to_editor(
             festival_name_ko="제7회 담양 산타 축제",
             festival_period_ko="2025.12.23 ~ 2025.12.24",
             festival_location_ko="담양 메타랜드 일원",
-            project_id=25,
+            project_id=24,
             poster_image_url=test_poster_image_url,
             layout_ref_image_url=test_layout_ref_url,
             concept_description="따뜻한 조명과 겨울 산타 마을 분위기를 살린 가족 참여형 크리스마스 축제",
