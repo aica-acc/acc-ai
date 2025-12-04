@@ -291,6 +291,10 @@ def write_logo_typography(
 
     # 1) 한글 축제 정보 → 영어 번역
     _log_progress("2) 한글 축제 정보를 영어로 번역 중...")
+    # 0) 회차 제거된 순수 축제명
+    festival_name_ko_clean = _strip_edition_from_name_ko(festival_name_ko)
+
+    # 1) 한글 축제 정보 → 영어 번역
     translated = _translate_festival_ko_to_en(
         festival_name_ko=festival_name_ko_clean,
         festival_period_ko=festival_period_ko,
@@ -321,6 +325,10 @@ def write_logo_typography(
 
     # 3) 포스터 이미지 분석 → 색감/무드/키워드 정리
     _log_progress("4) 포스터 기반 색감/무드/키워드 분석 단계...")
+    # 2) 영어 축제명 → 모노그램(3~5자 알파벳)
+    monogram_text = _build_monogram_from_english(name_en, min_len=3, max_len=5)
+
+    # 3) 포스터 이미지 분석 → 색감/무드/키워드 정리
     scene_info = _build_scene_phrase_from_poster(
         poster_image_url=poster_image_url,
         festival_name_en=name_en,
@@ -341,6 +349,14 @@ def write_logo_typography(
         details_phrase_en=details_phrase_en,
     )
     _log_progress("   - 프롬프트 조립 완료.")
+
+    # 4) 최종 프롬프트 조립
+    prompt = _build_logo_typography_prompt_en(
+        festival_name_en=name_en,
+        monogram_text=monogram_text,
+        base_scene_en=scene_info["base_scene_en"],
+        details_phrase_en=scene_info["details_phrase_en"],
+    )
 
     # 5) Seedream / Replicate 입력 JSON 구성
     #    -> 포스터 이미지는 Seedream에 보내지 않고, LLM 분석용으로만 사용.
@@ -453,6 +469,12 @@ def create_logo_typography(
             if "Prediction interrupted" in msg or "code: PA" in msg:
                 last_err = e
                 _log_progress("   - 일시적인 오류로 판단, 1초 후 재시도...")
+            output = replicate.run(model_name, input=replicate_input)
+            break
+        except ModelError as e:
+            msg = str(e)
+            if "Prediction interrupted" in msg or "code: PA" in msg:
+                last_err = e
                 time.sleep(1.0)
                 continue
             raise RuntimeError(
@@ -545,6 +567,7 @@ def run_logo_typography_to_editor(
 
     # 1) 프롬프트 생성
     _log_progress("▶ 1단계: Seedream 입력 JSON 생성 시작")
+    # 1) 프롬프트 생성
     seedream_input = write_logo_typography(
         poster_image_url=poster_image_url,
         festival_name_ko=festival_name_ko,
@@ -555,6 +578,8 @@ def run_logo_typography_to_editor(
 
     # 2) 저장 디렉터리: FRONT_PROJECT_ROOT/public/data/promotion/<member_no>/<p_no>/logo
     _log_progress("▶ 2단계: 저장 디렉터리 생성/확인 중...")
+
+    # 2) 저장 디렉터리: FRONT_PROJECT_ROOT/public/data/promotion/<member_no>/<p_no>/logo
     member_no = os.getenv("ACC_MEMBER_NO", "M000001")
     logo_dir = (
         FRONT_PROJECT_ROOT
@@ -570,6 +595,8 @@ def run_logo_typography_to_editor(
 
     # 3) 이미지 생성
     _log_progress("▶ 3단계: Seedream 모델 호출 및 이미지 생성 시작 (시간이 조금 걸릴 수 있습니다)...")
+
+    # 3) 이미지 생성
     create_result = create_logo_typography(
         seedream_input,
         save_dir=logo_dir,
@@ -580,6 +607,9 @@ def run_logo_typography_to_editor(
     # 4) 실제 저장된 파일 경로를 그대로 사용
     db_file_path = str(create_result["image_path"])
     _log_progress(f"▶ 4단계: 최종 DB 저장 경로 확정 → {db_file_path}")
+
+    # 4) 실제 저장된 파일 경로를 그대로 사용
+    db_file_path = str(create_result["image_path"])
 
     result: Dict[str, Any] = {
         "db_file_type": LOGO_TYPO_TYPE,      # "logo_typography"

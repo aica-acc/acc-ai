@@ -121,6 +121,7 @@ def _get_openai_client() -> OpenAI:
         _log_progress("OpenAI 클라이언트 초기화...")
         _client = OpenAI()
         _log_progress("OpenAI 클라이언트 준비 완료.")
+        _client = OpenAI()
     return _client
 
 
@@ -320,6 +321,10 @@ def write_logo_illustration(
 
     # 1) 한글 축제 정보 → 영어 번역
     _log_progress("2) 한글 축제 정보를 영어로 번역 중...")
+    # 0) 회차/연도 제거된 순수 한글 축제명
+    festival_name_ko_clean = _strip_edition_from_name_ko(festival_name_ko)
+
+    # 1) 한글 축제 정보 → 영어 번역
     translated = _translate_festival_ko_to_en(
         festival_name_ko=festival_name_ko_clean,
         festival_period_ko=festival_period_ko,
@@ -351,6 +356,7 @@ def write_logo_illustration(
 
     # 2) 텍스트 기반 테마 문장 추론 (LLM)
     _log_progress("3) 텍스트 기반 테마 문장 추론 단계...")
+    # 2) 텍스트 기반 테마 문장 추론 (LLM)
     theme_from_text = _infer_theme_from_english(
         festival_name_ko=festival_name_ko_clean,
         festival_name_en_for_theme=name_en_for_theme,
@@ -391,6 +397,7 @@ def write_logo_illustration(
 
     # 3) 최종 프롬프트 조립
     _log_progress("5) 일러스트 로고용 프롬프트 조립 중...")
+    # 3) 최종 프롬프트 조립
     prompt = _build_logo_illustration_prompt_en(
         festival_full_name_en=festival_full_name_en,
         festival_theme_en=festival_theme_en,
@@ -500,6 +507,12 @@ def create_logo_illustration(
             if "Prediction interrupted" in msg or "code: PA" in msg:
                 last_err = e
                 _log_progress("   - 일시적인 오류로 판단, 1초 후 재시도...")
+            output = replicate.run(model_name, input=replicate_input)
+            break
+        except ModelError as e:
+            msg = str(e)
+            if "Prediction interrupted" in msg or "code: PA" in msg:
+                last_err = e
                 time.sleep(1.0)
                 continue
             raise RuntimeError(
@@ -592,6 +605,7 @@ def run_logo_illustration_to_editor(
 
     # 1) 프롬프트 생성
     _log_progress("▶ 1단계: Seedream 입력 JSON 생성 시작")
+    # 1) 프롬프트 생성
     seedream_input = write_logo_illustration(
         poster_image_url=poster_image_url,
         festival_name_ko=festival_name_ko,
@@ -615,6 +629,8 @@ def run_logo_illustration_to_editor(
 
     # 3) 이미지 생성
     _log_progress("▶ 3단계: Seedream 모델 호출 및 이미지 생성 시작 (시간이 조금 걸릴 수 있습니다)...")
+
+    # 3) 이미지 생성
     create_result = create_logo_illustration(
         seedream_input,
         save_dir=logo_dir,

@@ -4940,6 +4940,18 @@ wheels = [
 ]
 
 [[package]]
+name = "serpapi"
+version = "0.1.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f0/fa/3fd8809287f3977a3e752bb88610e918d49cb1038b14f4bc51e13e594197/serpapi-0.1.5.tar.gz", hash = "sha256:b9707ed54750fdd2f62dc3a17c6a3fb7fa421dc37902fd65b2263c0ac765a1a5", size = 14191, upload-time = "2023-11-01T14:00:43.602Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/6a/21deade04100d64844e494353a5d65e7971fbdfddf78eb1f248423593ad0/serpapi-0.1.5-py2.py3-none-any.whl", hash = "sha256:6467b6adec1231059f754ccaa952b229efeaa8b9cae6e71f879703ec9e5bb3d1", size = 10966, upload-time = "2023-11-01T14:00:38.885Z" },
+]
+
+[[package]]
 name = "setuptools"
 version = "80.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -5670,6 +5682,7 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "selenium" },
     { name = "sentence-transformers" },
+    { name = "serpapi" },
     { name = "streamlit" },
     { name = "tiktoken" },
     { name = "tqdm" },
@@ -5734,6 +5747,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.7.2" },
     { name = "selenium", specifier = ">=4.27.1" },
     { name = "sentence-transformers", specifier = ">=5.1.2" },
+    { name = "serpapi", specifier = ">=0.1.5" },
     { name = "streamlit", specifier = ">=1.50.0" },
     { name = "tiktoken", specifier = ">=0.12.0" },
     { name = "tqdm", specifier = ">=4.67.1" },

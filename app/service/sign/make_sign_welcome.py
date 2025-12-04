@@ -210,6 +210,10 @@ def write_sign_welcome(
 
     # 2) 한글 축제 정보 → 영어 번역 (테마/씬 묘사용)
     _log_progress("2) 한글 축제 정보를 영어로 번역 중...")
+    # 1) 회차 / 축제명 분리 (회차는 번역 품질 향상을 위한 용도로만 사용)
+    _, pure_name_ko = _split_festival_count_and_name(festival_name_ko)
+
+    # 2) 한글 축제 정보 → 영어 번역 (테마/씬 묘사용)
     translated = _translate_festival_ko_to_en(
         festival_name_ko=pure_name_ko,
         festival_period_ko=festival_period_ko,
@@ -224,6 +228,8 @@ def write_sign_welcome(
 
     # 3) 마스코트(참고 이미지) 분석 → 축제 씬/무드 묘사 얻기
     _log_progress("3) 마스코트 이미지 기반 축제 씬/무드 분석 중...")
+
+    # 3) 마스코트(참고 이미지) 분석 → 축제 씬/무드 묘사 얻기
     scene_info = _build_scene_phrase_from_poster(
         poster_image_url=mascot_image_url,
         festival_name_en=name_en,
@@ -243,6 +249,13 @@ def write_sign_welcome(
         details_phrase_en=details_phrase_en,
     )
     _log_progress("   - 프롬프트 조립 완료.")
+
+    # 4) 최종 프롬프트 조립
+    prompt = _build_sign_welcome_prompt_en(
+        festival_name_en=name_en,
+        base_scene_en=scene_info["base_scene_en"],
+        details_phrase_en=scene_info["details_phrase_en"],
+    )
 
     # 5) Seedream / Replicate 입력 JSON 구성
     #  - 실제 해상도는 4096 x 1024 (약 4:1)
@@ -330,6 +343,9 @@ def create_sign_welcome(
     img_bytes = _download_image_bytes(image_url)
     image_file = BytesIO(img_bytes)
     _log_progress("   - 참고 이미지 로딩 완료.")
+    # 2) 참고 이미지 로딩 (URL + 로컬 파일 모두 지원)
+    img_bytes = _download_image_bytes(image_url)
+    image_file = BytesIO(img_bytes)
 
     # 3) Replicate에 넘길 공통 input 구성
     prompt = seedream_input.get("prompt", "")
@@ -378,6 +394,12 @@ def create_sign_welcome(
             if "Prediction interrupted" in msg or "code: PA" in msg:
                 last_err = e
                 _log_progress("   - 일시적인 오류로 판단, 1초 후 재시도...")
+            output = replicate.run(model_name, input=replicate_input)
+            break
+        except ModelError as e:
+            msg = str(e)
+            if "Prediction interrupted" in msg or "code: PA" in msg:
+                last_err = e
                 time.sleep(1.0)
                 continue
             raise RuntimeError(
@@ -491,6 +513,7 @@ def run_sign_welcome_to_editor(
 
     # 1) 프롬프트 생성
     _log_progress("▶ 1단계: Seedream 입력 JSON 생성 시작")
+    # 1) 프롬프트 생성
     seedream_input = write_sign_welcome(
         mascot_image_url=mascot_image_url,
         festival_name_ko=festival_name_ko,
@@ -501,6 +524,8 @@ def run_sign_welcome_to_editor(
 
     # 2) 저장 디렉터리: FRONT_PROJECT_ROOT/public/data/promotion/<member_no>/<p_no>/sign
     _log_progress("▶ 2단계: 저장 디렉터리 생성/확인 중...")
+
+    # 2) 저장 디렉터리: FRONT_PROJECT_ROOT/public/data/promotion/<member_no>/<p_no>/sign
     member_no = os.getenv("ACC_MEMBER_NO", "M000001")
     sign_dir = (
         FRONT_PROJECT_ROOT
@@ -518,6 +543,8 @@ def run_sign_welcome_to_editor(
     _log_progress(
         "▶ 3단계: Seedream 모델 호출 및 입구 표지판 이미지 생성 시작 (시간이 조금 걸릴 수 있습니다)..."
     )
+
+    # 3) 이미지 생성
     create_result = create_sign_welcome(
         seedream_input,
         save_dir=sign_dir,
@@ -527,6 +554,8 @@ def run_sign_welcome_to_editor(
 
     db_file_path = str(create_result["image_path"])
     _log_progress(f"▶ 4단계: 최종 DB 저장 경로 확정 → {db_file_path}")
+
+    db_file_path = str(create_result["image_path"])
 
     result: Dict[str, Any] = {
         "db_file_type": SIGN_WELCOME_TYPE,  # "sign_welcome"

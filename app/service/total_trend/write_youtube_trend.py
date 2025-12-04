@@ -221,7 +221,7 @@ def serpapi_find_image(trend: str) -> str | None:
             "api_key": os.getenv("SERPAPI_API_KEY")
         }
 
-        search = GoogleSearch(params)
+        search = google_search(params)
         results = search.get_dict()
 
         # 이미지 리스트 가져오기

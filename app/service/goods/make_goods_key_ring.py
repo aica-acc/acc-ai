@@ -210,6 +210,7 @@ def write_goods_key_ring(
 
     # 3) 마스코트(참고 이미지) 분석 → 축제 씬/무드 묘사 얻기
     _log_progress("2) 마스코트 이미지를 기반으로 축제 씬/무드 분석 중...")
+    # 3) 마스코트(참고 이미지) 분석 → 축제 씬/무드 묘사 얻기
     scene_info = _build_scene_phrase_from_poster(
         poster_image_url=mascot_image_url,
         festival_name_en=name_en,
@@ -223,6 +224,8 @@ def write_goods_key_ring(
 
     # 4) 최종 프롬프트 조립
     _log_progress("3) 키링 세트 프롬프트 조립 중...")
+
+    # 4) 최종 프롬프트 조립
     prompt = _build_goods_key_ring_prompt_en(
         festival_name_en=name_en,
         base_scene_en=scene_info["base_scene_en"],
@@ -364,6 +367,13 @@ def create_goods_key_ring(
             if "Prediction interrupted" in msg or "code: PA" in msg:
                 last_err = e
                 _log_progress("   - 일시적인 오류로 판단, 1초 후 재시도...")
+            output = replicate.run(model_name, input=replicate_input)
+            break
+        except ModelError as e:
+            msg = str(e)
+            # Seedream 특유의 일시적인 에러 코드 케이스 한 번 더 시도
+            if "Prediction interrupted" in msg or "code: PA" in msg:
+                last_err = e
                 time.sleep(1.0)
                 continue
             raise RuntimeError(
@@ -478,6 +488,7 @@ def run_goods_key_ring_to_editor(
 
     # 1) 프롬프트 생성
     _log_progress("▶ 1단계: Seedream 입력 JSON 생성 시작")
+    # 1) 프롬프트 생성
     seedream_input = write_goods_key_ring(
         mascot_image_url=mascot_image_url,
         festival_name_ko=festival_name_ko,
@@ -501,6 +512,8 @@ def run_goods_key_ring_to_editor(
 
     # 3) 이미지 생성
     _log_progress("▶ 3단계: Seedream 모델 호출 및 이미지 생성 시작 (시간이 조금 걸릴 수 있습니다)...")
+
+    # 3) 이미지 생성
     create_result = create_goods_key_ring(
         seedream_input,
         save_dir=goods_dir,
@@ -538,6 +551,10 @@ def main() -> None:
     festival_name_ko = "2025 담양산타축제"
     festival_period_ko = "2024.12.24 ~ 2024.12.25"
     festival_location_ko = "담양시 담양메타랜드 일원"
+    mascot_image_url = r"C:\final_project\ACC\acc-ai\app\data\mascot\kimcheon.png"
+    festival_name_ko = "2025 김천김밥축제"
+    festival_period_ko = "2024.10.25 ~ 2024.10.26"
+    festival_location_ko = "김천시 직지문화공원 및 사명대사공원 일원"
 
     # 2) 필수값 체크
     missing = []
