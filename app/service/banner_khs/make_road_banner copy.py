@@ -2,7 +2,7 @@
 """
 app/service/banner_khs/make_road_banner.py
 
-도로(4:1) 가로 현수막용 Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + editor 저장 모듈.
+도로(4:1) 가로 현수막용 Seedream 입력/프롬프트 생성 + 생성 이미지 저장 + 폰트/색상 추천 + editor 저장 모듈.
 
 역할
 - 참고용 포스터 이미지(URL 또는 로컬 파일 경로)와 축제 정보(한글)를 입력받아서
@@ -11,8 +11,9 @@ app/service/banner_khs/make_road_banner.py
   3) 한글 자리수에 맞춘 플레이스홀더 텍스트(라틴 알파벳 시퀀스)를 사용해서
      4:1 도로용 현수막 프롬프트를 조립한다. (write_road_banner)
   4) 해당 JSON을 받아 Replicate(Seedream)를 호출해 실제 이미지를 생성하고 저장한다. (create_road_banner)
-  5) run_road_banner_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
-  6) python make_road_banner.py 로 단독 실행할 수 있다.
+  5) 완성된 배너 이미지를 기반으로 폰트/색상 추천을 수행한다.
+  6) run_road_banner_to_editor(...) 로 run_id 기준 editor 폴더에 JSON/이미지 사본을 저장한다.
+  7) python make_road_banner.py 로 단독 실행할 수 있다.
 """
 
 from __future__ import annotations
@@ -20,12 +21,14 @@ from __future__ import annotations
 import base64
 import json
 import os
+import shutil
 import sys
 import time
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
+
 import requests
 import replicate
 from openai import OpenAI
@@ -38,12 +41,6 @@ from replicate.exceptions import ModelError
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_ROOT = PROJECT_ROOT / "app" / "data"  # ✅ app/data 아래로만 쓰기/읽기
 
-# 배너 고정 스펙
-BANNER_TYPE = "road_banner"
-BANNER_PRO_NAME = "도로용 현수막"
-BANNER_WIDTH = 4096
-BANNER_HEIGHT = 1024
-
 # C:\final_project\ACC\acc-ai\.env 로딩
 env_path = PROJECT_ROOT / ".env"
 load_dotenv(env_path)
@@ -51,6 +48,11 @@ load_dotenv(env_path)
 # app 패키지 import를 위해 루트를 sys.path에 추가
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+# 폰트/색상 추천 모듈 import
+from app.service.font_color.banner_font_color_recommend import (  # noqa: E402
+    recommend_fonts_and_colors_for_banner,
+)
 
 # -------------------------------------------------------------
 # 전역 OpenAI 클라이언트
@@ -356,7 +358,7 @@ def _build_scene_phrase_from_poster(
         "wide 4:1 illustration of",
     ]:
         if lower.startswith(prefix):
-            base_scene_en = base_scene_en[len(prefix):].lstrip(" ,.-")
+            base_scene_en = base_scene_en[len(prefix) :].lstrip(" ,.-")
             break
 
     if not details_phrase_en:
@@ -430,7 +432,7 @@ def _build_road_banner_prompt_en(
     # "글을 배너, 간판, 패널, 상자, 프레임, 리본 또는 물리적 보드에 배치하지 마십시오;"
     # 배경 바로 위에 깨끗한 떠다니는 글자만 그립니다
     # "이 프롬프트의 따옴표는 지시용이므로 최종 이미지에 따옴표를 그리지 마세요."
-    
+
     return prompt.strip()
 
 
@@ -494,8 +496,8 @@ def write_road_banner(
     # 5) Seedream / Replicate 입력 JSON 구성
     seedream_input: Dict[str, Any] = {
         "size": "custom",
-        "width": BANNER_WIDTH,
-        "height": BANNER_HEIGHT,
+        "width": 4096,
+        "height": 1024,
         "prompt": prompt,
         "max_images": 1,
         "aspect_ratio": "match_input_image",
@@ -595,6 +597,7 @@ def _save_image_from_file_output(
     return str(filepath), filename
 
 
+
 # -------------------------------------------------------------
 # 6) create_road_banner: Seedream JSON → Replicate 호출 → 이미지 저장
 # -------------------------------------------------------------
@@ -639,8 +642,8 @@ def create_road_banner(
 
     prompt = seedream_input.get("prompt", "")
     size = seedream_input.get("size", "custom")
-    width = int(seedream_input.get("width", BANNER_WIDTH))
-    height = int(seedream_input.get("height", BANNER_HEIGHT))
+    width = int(seedream_input.get("width", 4096))
+    height = int(seedream_input.get("height", 1024))
     max_images = int(seedream_input.get("max_images", 1))
     aspect_ratio = seedream_input.get("aspect_ratio", "match_input_image")
     enhance_prompt = bool(seedream_input.get("enhance_prompt", True))
@@ -719,6 +722,7 @@ def create_road_banner(
     }
 
 
+
 # -------------------------------------------------------------
 # 7) editor 저장용 헬퍼 + main
 # -------------------------------------------------------------
@@ -745,24 +749,11 @@ def run_road_banner_to_editor(
         festival_location_ko
 
     동작:
-      1) write_road_banner(...) 로 Seedream 입력용 seedream_input 생성
-      2) create_road_banner(..., save_dir=before_image_dir) 로
-         실제 도로 배너 이미지를 생성하고,
-         app/data/editor/<run_id>/before_image/road_banner.png 로 저장한다.
-      3) 배너 타입, 한글 축제 정보, 배너 크기만을 포함한
-         최소 결과 JSON을 구성하여
-         app/data/editor/<run_id>/before_data/road_banner.json 에 저장한다.
-
-    반환:
-      {
-        "type": "road_banner",
-        "pro_name": "도로용 현수막",
-        "festival_name_ko": ...,
-        "festival_period_ko": ...,
-        "festival_location_ko": ...,
-        "width": 4096,
-        "height": 1024
-      }
+      1) write_road_banner(...) 로 seedream_input 생성
+      2) create_road_banner(...) 로 실제 배너 이미지 생성 (곧바로 editor/before_image 에 저장)
+      3) recommend_fonts_and_colors_for_banner(...) 로 폰트/색상 추천
+      4) 결과 JSON + 이미지 사본을
+         app/data/editor/<run_id>/before_data, before_image 아래에 저장
     """
 
     # 1) Seedream 입력 생성
@@ -787,23 +778,62 @@ def run_road_banner_to_editor(
         prefix="road_banner_",
     )
 
-    # 4) 최종 결과 JSON (API/백엔드에서 사용할 최소 정보 형태)
+    # 4) 폰트/색상 추천
+    font_color_result = recommend_fonts_and_colors_for_banner(
+        banner_type="road_banner",
+        image_path=create_result["image_path"],
+        festival_name_placeholder=create_result["festival_name_placeholder"],
+        festival_period_placeholder=create_result["festival_period_placeholder"],
+        festival_location_placeholder=create_result["festival_location_placeholder"],
+        festival_base_name_placeholder=create_result["festival_base_name_placeholder"],
+        festival_base_period_placeholder=create_result[
+            "festival_base_period_placeholder"
+        ],
+        festival_base_location_placeholder=create_result[
+            "festival_base_location_placeholder"
+        ],
+    )
+
+    # 5) 결과 dict 구성
     result: Dict[str, Any] = {
-        "type": BANNER_TYPE,
-        "pro_name": BANNER_PRO_NAME,
+        "run_id": int(run_id),
+        "status": "success",
+        "type": "road_banner",
+        "poster_image_url": poster_image_url,
         "festival_name_ko": festival_name_ko,
         "festival_period_ko": festival_period_ko,
         "festival_location_ko": festival_location_ko,
-        "width": int(create_result.get("width", BANNER_WIDTH)),
-        "height": int(create_result.get("height", BANNER_HEIGHT)),
+        **create_result,
+        **font_color_result,
     }
 
-    # 5) before_data 밑에 JSON 저장 (파일명 고정)
-    json_path = before_data_dir / "road_banner.json"
+    # 생성된 이미지는 이미 before_image_dir 에 저장됨
+    editor_image_path = create_result.get("image_path") or ""
+    result["generated_image_path"] = editor_image_path
+    if editor_image_path:
+        result["image_path"] = editor_image_path
+        result["editor_image_path"] = editor_image_path
+    else:
+        result["status"] = "warning"
+        result["image_copy_error"] = "image_path missing in create_result"
+
+    # 6) before_data 밑에 JSON 저장
+    image_filename = result.get("image_filename") or ""
+    if image_filename:
+        stem = Path(image_filename).stem
+        json_name = f"{stem}.json"
+    else:
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        json_name = f"road_banner_{ts}.json"
+
+    json_path = before_data_dir / json_name
     with json_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
+    result["editor_json_path"] = str(json_path.resolve())
+
     return result
+
 
 
 def main() -> None:
@@ -815,19 +845,19 @@ def main() -> None:
 
     를 실행하면, 아래에 적어둔 입력값으로
     - 도로 배너 생성 (Seedream)
+    - 폰트/색상 추천
     - app/data/editor/<run_id>/before_data, before_image 저장
     까지 한 번에 수행한다.
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 10  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+    run_id = 4  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
     # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
-    # 필요하면 아래 한 줄을 str(DATA_ROOT / "banner" / "busan.png") 로 바꿔도 됨
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\goheung.png"
-    festival_name_ko = "제 15회 고흥 우주항공 축제"
-    festival_period_ko = "2025.05.03 ~ 2025.05.06"
-    festival_location_ko = "고흥군 봉래면 나로우주센터 일원"
+    poster_image_url = str(DATA_ROOT / "banner" / "busan.png")
+    festival_name_ko = "제12회 해운대 빛축제"
+    festival_period_ko = "2025.11.29 ~ 2026.01.18"
+    festival_location_ko = "해운대해수욕장 구남로 일원"
 
     # 2) 혹시라도 비어 있으면 바로 알려주기
     missing = []
@@ -855,19 +885,21 @@ def main() -> None:
         festival_location_ko=festival_location_ko,
     )
 
-    editor_root = DATA_ROOT / "editor" / str(run_id)
-    json_path = editor_root / "before_data" / "road_banner.json"
-    image_path = editor_root / "before_image" / "road_banner.png"
-
-    print("✅ road banner 생성 + editor 저장 완료")
+    print("✅ road banner 생성 + 폰트/색상 추천 + editor 저장 완료")
+    print("  run_id            :", result.get("run_id"))
     print("  type              :", result.get("type"))
-    print("  pro_name          :", result.get("pro_name"))
-    print("  festival_name_ko  :", result.get("festival_name_ko"))
-    print("  festival_period_ko:", result.get("festival_period_ko"))
-    print("  festival_location_ko:", result.get("festival_location_ko"))
-    print("  width x height    :", result.get("width"), "x", result.get("height"))
-    print("  json_path         :", json_path)
-    print("  image_path        :", image_path)
+    print("  editor_json_path  :", result.get("editor_json_path"))
+    print(
+        "  editor_image_path :",
+        result.get("editor_image_path", result.get("image_path")),
+    )
+    print("  generated_image_path :", result.get("generated_image_path"))
+    print("  font_name         :", result.get("festival_font_name_placeholder"))
+    print("  font_period       :", result.get("festival_font_period_placeholder"))
+    print("  font_location     :", result.get("festival_font_location_placeholder"))
+    print("  color_name        :", result.get("festival_color_name_placeholder"))
+    print("  color_period      :", result.get("festival_color_period_placeholder"))
+    print("  color_location    :", result.get("festival_color_location_placeholder"))
 
 
 if __name__ == "__main__":

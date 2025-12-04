@@ -91,6 +91,18 @@ else:
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+
+# -------------------------------------------------------------
+# 콘솔 진행 상황 로그 출력 유틸
+# -------------------------------------------------------------
+def _log_progress(message: str) -> None:
+    """
+    일러스트 로고용 진행 로그를 콘솔에 즉시 출력한다.
+    (flush=True 로 버퍼링 없이 실시간 표시)
+    """
+    print(f"[logo_illustration] {message}", flush=True)
+
+
 # road_banner 공용 유틸 재사용
 from app.service.banner_khs.make_road_banner import (  # type: ignore
     _translate_festival_ko_to_en,
@@ -106,6 +118,9 @@ def _get_openai_client() -> OpenAI:
     """OPENAI_API_KEY를 사용하는 전역 OpenAI 클라이언트 (한 번만 생성)."""
     global _client
     if _client is None:
+        _log_progress("OpenAI 클라이언트 초기화...")
+        _client = OpenAI()
+        _log_progress("OpenAI 클라이언트 준비 완료.")
         _client = OpenAI()
     return _client
 
@@ -186,6 +201,8 @@ def _infer_theme_from_english(
     festival_period_en = _n(festival_period_en)
     festival_location_en = _n(festival_location_en)
 
+    _log_progress("  - 텍스트 기반 축제 테마 문장 추론 요청 중...")
+
     system_msg = (
         "You write very short English descriptions of visual themes for logos. "
         "Given information about a festival, you must extract the underlying visual theme "
@@ -226,6 +243,7 @@ def _infer_theme_from_english(
     if not theme_text:
         raise RuntimeError("축제 테마 문장을 LLM에서 비어 있게 반환했습니다.")
 
+    _log_progress(f"  - 텍스트 기반 테마 문장: \"{theme_text}\"")
     return theme_text
 
 
@@ -292,6 +310,17 @@ def write_logo_illustration(
     축제 일러스트 로고(2048x2048)용 Seedream 입력 JSON 생성.
     """
 
+    _log_progress("1) 일러스트 로고용 Seedream 입력 생성 시작...")
+    _log_progress(f"   - 원본 한글 축제명: {festival_name_ko}")
+    _log_progress(f"   - 기간(ko): {festival_period_ko}")
+    _log_progress(f"   - 장소(ko): {festival_location_ko}")
+
+    # 0) 회차/연도 제거된 순수 한글 축제명
+    festival_name_ko_clean = _strip_edition_from_name_ko(festival_name_ko)
+    _log_progress(f"   - 회차/연도 제거 후 한글 축제명: {festival_name_ko_clean}")
+
+    # 1) 한글 축제 정보 → 영어 번역
+    _log_progress("2) 한글 축제 정보를 영어로 번역 중...")
     # 0) 회차/연도 제거된 순수 한글 축제명
     festival_name_ko_clean = _strip_edition_from_name_ko(festival_name_ko)
 
@@ -304,6 +333,10 @@ def write_logo_illustration(
     name_en_raw = translated.get("name_en", "")
     period_en = translated.get("period_en", "")
     location_en = translated.get("location_en", "")
+
+    _log_progress(
+        f"   - 번역 결과: name_en_raw='{name_en_raw}', period_en='{period_en}', location_en='{location_en}'"
+    )
 
     if not name_en_raw:
         raise ValueError(
@@ -318,6 +351,11 @@ def write_logo_illustration(
         str(name_en_raw).split()
     )
 
+    _log_progress(f"   - 테마용 영문명: {name_en_for_theme}")
+    _log_progress(f"   - 로고 텍스트용 영문명: {festival_full_name_en}")
+
+    # 2) 텍스트 기반 테마 문장 추론 (LLM)
+    _log_progress("3) 텍스트 기반 테마 문장 추론 단계...")
     # 2) 텍스트 기반 테마 문장 추론 (LLM)
     theme_from_text = _infer_theme_from_english(
         festival_name_ko=festival_name_ko_clean,
@@ -327,6 +365,7 @@ def write_logo_illustration(
     )
 
     # 2-1) 포스터 기반 씬/색감/무드 분석 (LLM vision)
+    _log_progress("4) 포스터 이미지 기반 씬/색감/무드 분석 단계...")
     scene_info = _build_scene_phrase_from_poster(
         poster_image_url=poster_image_url,
         festival_name_en=festival_full_name_en,
@@ -335,6 +374,13 @@ def write_logo_illustration(
     )
     base_scene_en = str(scene_info.get("base_scene_en", ""))
     details_phrase_en = str(scene_info.get("details_phrase_en", ""))
+
+    _log_progress(
+        f"   - 포스터 기반 base_scene_en: '{base_scene_en[:60]}...'"
+    )
+    _log_progress(
+        f"   - 포스터 기반 details_phrase_en: '{details_phrase_en[:60]}...'"
+    )
 
     # 2-2) 텍스트 테마 + 포스터 테마를 하나의 문장으로 합치기
     combined_theme_parts = [
@@ -347,6 +393,10 @@ def write_logo_illustration(
     )
     festival_theme_en = combined_theme or theme_from_text or base_scene_en or details_phrase_en
 
+    _log_progress(f"   - 최종 결합 테마 문장: '{festival_theme_en}'")
+
+    # 3) 최종 프롬프트 조립
+    _log_progress("5) 일러스트 로고용 프롬프트 조립 중...")
     # 3) 최종 프롬프트 조립
     prompt = _build_logo_illustration_prompt_en(
         festival_full_name_en=festival_full_name_en,
@@ -372,6 +422,7 @@ def write_logo_illustration(
         "festival_base_location_ko": str(festival_location_ko or ""),
     }
 
+    _log_progress("✔ Seedream 입력 JSON 생성 완료.")
     return seedream_input
 
 
@@ -411,6 +462,8 @@ def create_logo_illustration(
     3) 생성된 이미지를 로컬에 저장한다.
     """
 
+    _log_progress("6) Seedream 모델 호출 및 일러스트 로고 생성 단계 진입...")
+
     prompt = str(seedream_input.get("prompt", ""))
     size = seedream_input.get("size", "custom")
     width = int(seedream_input.get("width", LOGO_ILLUST_WIDTH_PX))
@@ -435,11 +488,25 @@ def create_logo_illustration(
 
     model_name = os.getenv("LOGO_ILLUSTRATION_MODEL", "bytedance/seedream-4")
 
+    _log_progress(
+        f"   - Seedream 호출 준비 완료 (model='{model_name}', size={width}x{height}, max_images={max_images})"
+    )
+
     output = None
     last_err: Exception | None = None
 
     for attempt in range(3):
         try:
+            _log_progress(f"   - Seedream 호출 시도 {attempt + 1}/3 ... (잠시 기다려 주세요)")
+            output = replicate.run(model_name, input=replicate_input)
+            _log_progress("   - Seedream 호출 성공, 결과 수신 완료.")
+            break
+        except ModelError as e:
+            msg = str(e)
+            _log_progress(f"   - Seedream ModelError 발생: {msg}")
+            if "Prediction interrupted" in msg or "code: PA" in msg:
+                last_err = e
+                _log_progress("   - 일시적인 오류로 판단, 1초 후 재시도...")
             output = replicate.run(model_name, input=replicate_input)
             break
         except ModelError as e:
@@ -452,11 +519,13 @@ def create_logo_illustration(
                 f"Seedream model error during illustration logo generation: {e}"
             )
         except Exception as e:
+            _log_progress(f"   - Seedream 호출 중 예기치 못한 오류: {e}")
             raise RuntimeError(
                 f"Unexpected error during illustration logo generation: {e}"
             )
 
     if output is None:
+        _log_progress("   - 3회 시도 후에도 Seedream 호출 실패.")
         raise RuntimeError(
             f"Seedream model error during illustration logo generation after retries: {last_err}"
         )
@@ -472,9 +541,13 @@ def create_logo_illustration(
         save_base = _get_logo_illustration_save_dir()
     save_base.mkdir(parents=True, exist_ok=True)
 
+    _log_progress(f"7) 생성 이미지 저장 디렉터리 준비 완료: {save_base}")
+
     image_path, image_filename = _save_image_from_file_output(
         file_output, save_base, prefix=prefix
     )
+
+    _log_progress(f"✔ 생성 일러스트 로고 저장 완료: {image_path}")
 
     return {
         "size": size,
@@ -522,6 +595,16 @@ def run_logo_illustration_to_editor(
       }
     """
 
+    _log_progress("==============================================")
+    _log_progress("▶ 일러스트 로고 생성(run_logo_illustration_to_editor) 시작")
+    _log_progress(f"   - p_no={p_no}")
+    _log_progress(f"   - poster_image_url={poster_image_url}")
+    _log_progress(f"   - festival_name_ko={festival_name_ko}")
+    _log_progress(f"   - festival_period_ko={festival_period_ko}")
+    _log_progress(f"   - festival_location_ko={festival_location_ko}")
+
+    # 1) 프롬프트 생성
+    _log_progress("▶ 1단계: Seedream 입력 JSON 생성 시작")
     # 1) 프롬프트 생성
     seedream_input = write_logo_illustration(
         poster_image_url=poster_image_url,
@@ -542,6 +625,10 @@ def run_logo_illustration_to_editor(
         / "logo"
     )
     logo_dir.mkdir(parents=True, exist_ok=True)
+    _log_progress(f"▶ 2단계: 저장 디렉터리 준비 완료 → {logo_dir}")
+
+    # 3) 이미지 생성
+    _log_progress("▶ 3단계: Seedream 모델 호출 및 이미지 생성 시작 (시간이 조금 걸릴 수 있습니다)...")
 
     # 3) 이미지 생성
     create_result = create_logo_illustration(
@@ -551,6 +638,7 @@ def run_logo_illustration_to_editor(
     )
 
     db_file_path = str(create_result["image_path"])
+    _log_progress(f"▶ 4단계: 최종 생성 이미지 경로 확정 → {db_file_path}")
 
     result: Dict[str, Any] = {
         "db_file_type": LOGO_ILLUST_TYPE,   # "logo_illustration"
@@ -558,6 +646,9 @@ def run_logo_illustration_to_editor(
         "db_file_path": db_file_path,
         "type_ko": LOGO_ILLUST_PRO_NAME,    # "일러스트 로고"
     }
+
+    _log_progress("✔ 일러스트 로고 생성 완료. DB 메타 정보 리턴.")
+    _log_progress("==============================================")
 
     return result
 
