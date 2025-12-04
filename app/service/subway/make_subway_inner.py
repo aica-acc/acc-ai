@@ -57,8 +57,6 @@ SUBWAY_INNER_PRO_NAME = "지하철 차내액자"
 SUBWAY_INNER_WIDTH_PX = 1446
 SUBWAY_INNER_HEIGHT_PX = 1024
 
-# 실제 인쇄 사이즈(cm) – 결과 JSON용
-
 # .env 로딩
 env_path = PROJECT_ROOT / ".env"
 load_dotenv(env_path)
