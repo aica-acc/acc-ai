@@ -32,6 +32,8 @@ def create_master_prompt(user_theme, analysis_summary, poster_trend_report, stra
         [CRITICAL RULES]
         1. **Poster Aesthetics:** The image MUST visually function as a **promotional festival poster**. 
            - **Do NOT describe a generic background.** Describe a **finished, highly composed promotional artwork.**
+           - **Typography Balance:** Korean text should be prominent but NOT overpowering (15-25% of total composition)
+           - The poster should look like professional festival/event promotional material you'd see in a gallery or subway station
         2. **English Only:** `visual_prompt` MUST be in English.
         3. **Include Korean Text Only:** The final visual prompt must contain instructions for Korean Title, Date, and Location to be rendered in the image. Korean typography should be the centerpiece of the design with artistic, creative placement and 3D effects. NO ENGLISH TEXT allowed.
         [JSON FORMAT]
@@ -67,29 +69,33 @@ def create_master_prompt(user_theme, analysis_summary, poster_trend_report, stra
         - Space/science aesthetic with a contemporary feel
         - Typography integrated into the geometric design
 
-        3. Retro Vintage Illustration (레트로 빈티지 일러스트)
-        - Warm, nostalgic illustration style with vintage poster aesthetics
-        - Hand-drawn feel with rich textures and classic compositions
-        - Traditional color palettes (navy, cream, warm tones)
-        - Storytelling elements with silhouettes or vintage scenes
+        3. Modern Art Gallery Exhibition (모던 아트 갤러리 전시회)
+        - High-end museum exhibition poster style
+        - Clean, sophisticated composition with a focus on "Art as Hero"
+        - Generous negative space (white or solid color) for a premium feel
+        - Typography: Elegant, minimal, and professional (often sans-serif)
+        - Layout: Asymmetric text placement (e.g., small text at bottom corners) to let the artwork breathe
+        - Vibe: Cultural, expensive, sophisticated, "Picture-like"
 
-        4. Abstract Flowing Art with Symbolic Elements (추상적 아트 + 상징 요소)
-        - Bold organic shapes with flowing curves, waves, and abstract patterns
-        - Festival's symbolic elements subtly integrated into the abstract composition
-        - Examples: Santa hat silhouette in flowing ribbons, cherry blossom shapes in waves, musical notes in curves
-        - Vibrant, energetic color combinations with smooth gradients
-        - Balance between abstract art and recognizable festival symbols (70% abstract, 30% symbolic)
-        - Typography flowing naturally with the abstract shapes
+        4. Cinematic Sci-Fi & Tech Art (시네마틱 SF & 테크 아트)
+        - Grand scale composition with dark backgrounds and glowing elements
+        - High-tech aesthetic: blueprints, neon lines, geometric wireframes (like the rocket reference)
+        - Dramatic lighting and cinematic perspective (looking up at a massive structure)
+        - Typography: Integrated into the tech lines or bold cinematic title
+        - Vibe: "Blockbuster movie poster", "Futuristic", "Grand", "Cool"
 
         CRITICAL REQUIREMENTS FOR ALL 4 CONCEPTS:
-        - Typography should be 25-35% of the poster (NOT more than 40%)
+        - **Typography Size:** MUST NOT exceed 25% of the total poster area. (Keep it elegant)
+        - **LAYOUT DIVERSITY:** DO NOT default to centered text for all posters.
+        - **Style 3 (Gallery):** Use asymmetric, minimal text placement.
+        - **Style 4 (Sci-Fi):** Use bold, cinematic text placement.
         - ARTISTIC and ILLUSTRATIVE styles ONLY (avoid photorealistic approaches)
         - Korean text ONLY (NO English text whatsoever)
         - Creative, artistic Korean lettering integrated naturally
         - Premium festival poster design with artistic merit
-        - Each concept must be visually distinct and radically different
-
+        
         Focus on ARTISTIC ILLUSTRATION rather than photography or realism.
+
         """
         
         client = openai.OpenAI()
