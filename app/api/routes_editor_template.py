@@ -234,6 +234,7 @@ TYPE_PIPELINE_MAP = {
 
     # Poster 파생
     # "poster_cardnews": run_poster_cardnews_to_editor,
+    "leaflet": run_leaflet_to_editor,
     "poster_video": run_poster_video_to_editor,
     # "live_poster": run_live_poster_to_editor,
 
