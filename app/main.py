@@ -29,6 +29,7 @@ app.mount(
     name="total_trend_images"
 )
 
+
 app.include_router(routes_festival.router)
 app.include_router(routes_poster.router)
 # app.include_router(routes_banner.router)
