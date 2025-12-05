@@ -3,6 +3,7 @@ import requests
 import replicate
 from dotenv import load_dotenv
 from replicate.helpers import FileOutput
+import cairosvg
 
 load_dotenv()
 
@@ -252,10 +253,19 @@ def run_recraft(prompt: str, output_path: str):
         print("[RECRAFT ERROR]", msg)
         return {"status": "error", "error": msg}
 
+    # ============================
+    # 🔥 SVG인 경우 PNG로 변환
+    # ============================
     try:
-        _download_image(url, output_path)
+        print("[RECRAFT] SVG 변환 처리 시작")
+        svg_bytes = requests.get(url).content
+        
+        # output_path는 PNG 확장자로 저장됨
+        cairosvg.svg2png(bytestring=svg_bytes, write_to=output_path)
+        print("[RECRAFT] SVG → PNG 변환 완료:", output_path)
+
     except Exception as e:
-        msg = f"RECRAFT_DOWNLOAD_ERROR: {e}"
+        msg = f"RECRAFT_SVG_CONVERT_ERROR: {e}"
         print("[RECRAFT ERROR]", msg)
         return {"status": "error", "error": msg}
 
@@ -263,7 +273,7 @@ def run_recraft(prompt: str, output_path: str):
 
     return {
         "status": "success",
-        "image_url": url,
-        "file_path": output_path,
+        "image_url": url,         # SVG 원본 URL (디버깅용)
+        "file_path": output_path, # 변환된 PNG 경로
         "file_name": file_name,
     }

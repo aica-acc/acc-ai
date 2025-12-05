@@ -69,46 +69,60 @@ embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 MODEL_STYLE_REFERENCES = {
     "recraft": [
-        "flat vector illustration",
-        "minimal icon symbol",
-        "simple geometric shapes",
-        "outline svg style",
-        "clean vector mascot",
+        "flat vector cute mascot",
+        "clean minimal svg character",
+        "round simple pastel icon mascot",
+        "kawaii geometric flat character",
+        "minimal line illustration cute mascot",
     ],
+
     "pixart": [
-        "text focused design",
-        "typography based style",
-        "lettering art",
-        "headline graphic",
-        "word art illustration",
+        "glossy cute sticker mascot",
+        "round chubby colorful emoji style",
+        "creamy pastel sticker character",
+        "simple bold shading cute decal",
+        "mobile app sticker style mascot",
     ],
+
     "sd3": [
-        "anime fantasy magical character",
-        "chibi cute mascot",
-        "soft pastel children illustration",
-        "dreamy fairy style",
+        "pastel anime chibi mascot",
+        "korean cute illustration",
+        "soft dreamy children character",
+        "big eyed kawaii mascot pastel",
+        "gentle soft cartoon pastel mascot",
     ],
+
     "flux": [
-        "realistic mascot full body",
-        "high quality shading",
-        "studio lighting illustration",
-        "clean modern mascot design",
+        "semi realistic cute mascot",
+        "toy-like 3d cute character",
+        "commercial brand mascot 3d",
+        "high detail soft lighting mascot",
+        "studio render cute character",
     ],
 }
 
-
-def semantic_choose_model(style_sentence: str) -> str:
+def semantic_choose_model(style_sentence: str, translated_prompt: str = "") -> str:
     print("[ModelSelector] ▷ semantic_choose_model 진입")
     print(f"[ModelSelector]   style_sentence = {style_sentence!r}")
 
-    vec = embedding_model.encode(style_sentence, convert_to_tensor=True)
+    # 1) 스타일 정보 + 번역된 프롬프트 조합
+    query_text = style_sentence
+    if translated_prompt:
+        query_text = f"{style_sentence}. {translated_prompt}"
+
+    print(f"[ModelSelector]   조합된 query_text = {query_text[:200]}...")
+
+    # 2) 문장 임베딩 생성
+    vec = embedding_model.encode(query_text, convert_to_tensor=True)
 
     best_model = None
     best_score = -1.0
 
+    # 3) 각 모델 스타일 레퍼런스와 비교
     for model_name, examples in MODEL_STYLE_REFERENCES.items():
         ref_vec = embedding_model.encode(examples, convert_to_tensor=True)
         score = util.cos_sim(vec, ref_vec).max().item()
+
         print(f"[ModelSelector] {model_name} = {score:.4f}")
 
         if score > best_score:
@@ -118,17 +132,18 @@ def semantic_choose_model(style_sentence: str) -> str:
     print(f"[ModelSelector] 최종 선택 모델 = {best_model}")
     return best_model or "flux"
 
-
 def node_model_select(state: MascotImageState):
     print("[ImageGraph] ▷ node_model_select 진입")
     print(f"[ImageGraph]   style_name = {state['style_name']!r}")
 
-    model = semantic_choose_model(state["style_name"])
-    state["model_name"] = model
+    model = semantic_choose_model(
+        style_sentence=state["style_name"],
+        translated_prompt=state.get("translated_prompt", "")
+    )
 
+    state["model_name"] = model
     print(f"[MascotImageGraph] 선택된 모델 = {model}")
     return state
-
 
 # ============================================
 # 4. 최종 프롬프트 구성

@@ -15,20 +15,23 @@ if not PROJECT_ROOT:
 SAVE_DIR = os.path.join(PROJECT_ROOT, "promotion", "mascot")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-
 def create_mascot_prompt(user_theme, analysis_summary, poster_trend_report, strategy_report):
-    result = run_mascot_prompt_pipeline(
-        user_theme=user_theme,
-        analysis_summary=analysis_summary,
-        poster_trend_report=poster_trend_report,
-        strategy_report=strategy_report,
-    )
+    provided_context = f"""
+    [User Theme]
+    {user_theme}
 
-    if result.get("status") != "success":
-        raise Exception(f"PROMPT_GENERATION_FAILED: {result}")
+    [Analysis Summary]
+    {analysis_summary}
 
+    [Poster Trend Report]
+    {poster_trend_report}
+
+    [Strategy Report]
+    {strategy_report}
+    """
+    result = run_mascot_prompt_pipeline(provided_context)
+    
     return result
-
 
 def create_mascot_images(prompt_options):
     """
