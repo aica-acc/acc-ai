@@ -5,6 +5,7 @@ from fastapi import APIRouter, Form, File, UploadFile, HTTPException
 from app.domain.poster import poster_model as models
 from app.service.poster import image_editor
 from pydantic import BaseModel
+from app.service.poster import image_generator
 
 try:
     from app.tools.proposal import pdf_tools           
@@ -59,77 +60,83 @@ async def handle_prompt_generation(body: models.GeneratePromptRequest):
 # [API 3] Create Image (🚨 4개 일괄 생성으로 업그레이드)
 @router.post("/create-image")
 async def handle_image_creation(body: models.CreateImageRequest):
-    print("\n--- [FastAPI 서버] /create-image 요청 수신 (4종 일괄 생성) ---")
+    print("\n--- [FastAPI 서버] /create-image 요청 수신 (Replicate 버전) ---")
     try:
         analysis_data = body.analysis_summary
-        prompt_options = body.prompt_options # 리스트 받음
-
+        prompt_options = body.prompt_options
         generated_results = []
         
         print(f"  🚀 총 {len(prompt_options)}개의 이미지 생성을 시작합니다...")
 
         for i, option in enumerate(prompt_options):
             style_name = option.style_name
-            # 호환성: visual_prompt_for_background가 없으면 visual_prompt 사용
+            # 배경용 프롬프트 혹은 시각적 프롬프트 선택
             raw_prompt = option.visual_prompt_for_background or option.visual_prompt
             text_content = option.text_content
             
-            print(f"    👉 [{i+1}/{len(prompt_options)}] 스타일: {style_name} 생성 중...")
-
-            # 1. 한글 텍스트 추출 (번역기에 전달용)
+            # 1. 한글 텍스트 준비 
             title_k = ""
             date_k = ""
             location_k = ""
             
             if text_content:
                 title_k = text_content.title
-                date_k = text_content.date_location # 날짜+장소
-            elif analysis_data: # text_content 없으면 분석 데이터에서 백업
+                date_k = text_content.date_location
+            elif analysis_data:
                 title_k = analysis_data.get("title", "")
                 date_k = analysis_data.get("date", "")
                 location_k = analysis_data.get("location", "")
 
-            # 2. 프롬프트 번역 및 최적화 (영어 타이포그래피 포함)
-            final_prompt = image_generator.translate_to_english(raw_prompt, title_k, date_k, location_k)
-            
-            # 3. 규격 설정 (세로형 고정)
-            width = 1024
-            height = 1792
-            
-            # 4. 파일명 생성
+            # 2. 파일명 및 경로 설정
             timestamp = int(time.time())
             final_filename = f"poster_{timestamp}_{i}.png"
             final_filepath = os.path.join(SAVE_DIR, final_filename)
             
-            # 5. DALL-E 3 이미지 생성 호출
-            img_result = image_generator.generate_image_dalle3(
-                prompt=final_prompt,
-                width=width,
-                height=height,
-                output_path=final_filepath
-            )
-            
-            image_url = ""
-            if "status" in img_result and img_result["status"] == "success":
-                image_url = f"/poster-images/{final_filename}"
-            else:
-                print(f"      ❌ 생성 실패: {img_result.get('error')}")
+            # 3. Replicate 이미지 생성 호출 (함수명 변경!)
+           
+            try:
+                # 1단계: translate_to_english 함수로 프롬프트 생성
+                final_prompt = image_generator.translate_to_english(
+                    raw_prompt=raw_prompt,
+                    title_k=title_k,
+                    date_k=date_k,
+                    location_k=location_k  # 장소도 포함!
+                )
+                
+                # 2단계: 이미지 생성
+                img_result = image_generator.generate_image_dalle3(
+                    prompt=final_prompt,
+                    width=896,
+                    height=1152,
+                    output_path=final_filepath
+                )
 
-            # 결과 리스트에 추가
-            generated_results.append({
-                "style_name": style_name,
-                "image_url": image_url,
-                "file_name": final_filename,
-                "file_path": final_filepath,   # ⭐ 추가
-                "visual_prompt": final_prompt,
-                "text_content": text_content
-            })
+                if "status" in img_result and img_result["status"] == "success":
+                    # ✅ 실제 저장된 파일명만 반환
+                    image_url = final_filename  # "/poster-images/" 제거!
+                    print(f"      ✅ 생성 성공, 파일명: {final_filename}")
+                else:
+                    print(f"      ❌ 생성 실패: {img_result.get('error')}")
+                    image_url = ""
+
+                generated_results.append({
+                    "style_name": style_name,
+                    "image_url": image_url,  # 이제 파일명만 들어감
+                    "file_name": final_filename,
+                    "file_path": final_filepath,
+                    "visual_prompt": raw_prompt,
+                    "text_content": text_content
+                })
+
+            except Exception as inner_e:
+                print(f"    ⚠️ 개별 생성 중 에러: {inner_e}")
+                continue
 
         print("  ✅ 모든 이미지 생성 완료!")
 
         return {
             "status": "success",
-            "images": generated_results # 리스트 반환
+            "images": generated_results
         }
 
     except Exception as e:
