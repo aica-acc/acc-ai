@@ -1,5 +1,5 @@
 [project]
-name = "uv-hackathon"
+name = "acc_ai"
 version = "0.1.0"
 description = "Hackathon prototype with Instagram/YouTube crawling + LangGraph"
 readme = "README.md"
@@ -77,6 +77,7 @@ dependencies = [
     "google-genai>=1.52.0",
     "openai>=2.5.0",
     "google-cloud-aiplatform>=1.128.0",
+    "cairosvg>=2.8.2",
 ]
 
 [tool.uv.sources]

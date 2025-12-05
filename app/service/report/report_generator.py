@@ -133,6 +133,9 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
         """
 
     elif report_type == "package":
+        # 자바에서 보낸 실제 경로 받기 (없으면 기본값)
+        real_poster_path = metadata.get('poster_image', 'poster_main.jpg')
+        
         user_prompt = f"""
         {info_text}
         
@@ -142,12 +145,12 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
         {{
             "files": [
                 {{ "name": "보도자료.pdf", "desc": "언론 배포용 보도자료", "icon": "📄" }},
-                {{ "name": "poster_main.jpg", "desc": "메인 포스터 고화질", "icon": "🖼️" }},
+                {{ "name": "{real_poster_path}", "desc": "메인 포스터 고화질 원본", "icon": "🖼️" }}, 
                 {{ "name": "program_list.xlsx", "desc": "세부 일정표", "icon": "📅" }}
             ],
             "preview": [
                 {{ "title": "보도자료.pdf", "desc": "축제 개요 및 상세 소개 포함" }},
-                {{ "title": "poster_main.jpg", "desc": "시각적 아이덴티티를 담은 포스터" }}
+                {{ "title": "{real_poster_path}", "desc": "시각적 아이덴티티를 담은 포스터" }}
             ]
         }}
         """
