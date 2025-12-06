@@ -264,7 +264,7 @@ class BingImageProvider(ImageSearchProvider):
         def _call():
             host = host_of_url(self.endpoint)
             wait_for_host_gap(host)
-            return requests.get(self.endpoint, headers=headers, params=params, timeout=20)
+            return requests.get(self.endpoint, headers=headers, params=params, timeout=120)
         r = safe_request(_call)
         if not r:
             return []
@@ -293,7 +293,7 @@ class SerpApiImageProvider(ImageSearchProvider):
         def _call():
             host = host_of_url(self.endpoint)
             wait_for_host_gap(host)
-            return requests.get(self.endpoint, params=params, timeout=20)
+            return requests.get(self.endpoint, params=params, timeout=120)
         r = safe_request(_call)
         if not r:
             return []
@@ -322,7 +322,7 @@ def download_image(url: str, session: requests.Session) -> Optional[bytes]:
     def _call():
         host = host_of_url(url)
         wait_for_host_gap(host)
-        return session.get(url, headers={"User-Agent": USER_AGENT}, timeout=25)
+        return session.get(url, headers={"User-Agent": USER_AGENT}, timeout=120)
     r = safe_request(_call)
     if not r:
         return None

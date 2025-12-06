@@ -133,7 +133,7 @@ def _download_image_bytes(path_or_url: str) -> bytes:
     # HTTP(S)인 경우
     if s.startswith("http://") or s.startswith("https://"):
         try:
-            resp = requests.get(s, timeout=20)
+            resp = requests.get(s, timeout=120)
             resp.raise_for_status()
             return resp.content
         except Exception as e:
@@ -583,7 +583,7 @@ def _save_image_from_file_output(
     if hasattr(file_output, "read") and callable(file_output.read):
         data: bytes = file_output.read()
     elif isinstance(url, str):
-        resp = requests.get(url, timeout=60)
+        resp = requests.get(url, timeout=120)
         resp.raise_for_status()
         data = resp.content
     else:
