@@ -86,11 +86,12 @@ def _build_subway_light_prompt_en(
     details_phrase_en: str,
 ) -> str:
     """
-    지하철 조명광고용 Seedream 영어 프롬프트.
+    지하철 조명광고용 Seedream 영어 프롬프트 (텍스트 없이 순수 이미지 버전).
 
     - 실제 역/프레임/액자를 그리는 것이 아니라
       'LED 느낌의 한 장짜리 포스터 일러스트'만 생성하게 만든다.
-    - 핵심 일러스트와 축제명이 모두 중앙 정렬.
+    - 첨부 포스터의 텍스트/글자는 전부 무시한다.
+    - 최종 결과물에는 어떠한 글자도 들어가지 않는다.
     """
 
     def _n(s: str) -> str:
@@ -98,43 +99,29 @@ def _build_subway_light_prompt_en(
 
     base_scene_en = _n(base_scene_en)
     details_phrase_en = _n(details_phrase_en)
-    title_text = _n(title_text)
+    # title_text는 더 이상 사용하지 않지만, 시그니처 유지 차원에서 그대로 둠
 
     prompt = (
-        # 전체 장면: **절대 지하철 역/프레임 언급 금지**
-        f"Square-ish festival poster illustration themed around {base_scene_en}, "
+        # 전체 구성: 순수 포스터 일러스트 + 주변 환경 요소 금지
+        f"Vertical festival poster style illustration themed around {base_scene_en}, "
         "using the attached poster image only as reference for overall color palette, lighting, and mood, "
         "but creating a completely new composition as a clean printable artwork. "
-        "Fill the ENTIRE canvas edge to edge with the illustration, with NO outer borders and NO white margins. "
+        "Fill the entire 1500x1620 canvas edge to edge with the illustration, "
+        "with NO outer borders and NO white margins. "
         "Do NOT draw any subway station, wall, tiles, ceiling, floor, people, or surrounding environment. "
         "Do NOT draw any metal frame, bezel, glass, panel structure, screws, or physical light-box enclosure. "
-        "Just produce a single flat digital poster image. "
+        "Just produce a single flat digital poster image itself. "
 
-        # 중앙 일러스트 + LED 느낌
+        # 조명광고(LED 백라이트) 느낌
         "Use a dark, rich background with a subtle vignette, and create a soft inner glow so that the center area "
-        "looks like it is gently illuminated from behind, similar to an LED-backlit poster. "
-        f"In the central area, place the PRIMARY FESTIVAL ILLUSTRATION inspired by {details_phrase_en}, "
-        "such as rockets, mascots, symbolic objects, or thematic scenery. "
-        "This illustration should be vertically centered and feel like the main attraction. "
+        "looks as if it is gently illuminated from behind, similar to an LED backlit lightbox advertisement. "
+        f"In the central area, create the PRIMARY FESTIVAL SCENE inspired by {details_phrase_en}, "
+        "with characters, landscapes, objects, or symbolic elements that clearly express the festival theme. "
 
-        # 텍스트 배치: 중앙 정렬
-        "Place the festival title as a single main line of text, perfectly centered horizontally, "
-        "and positioned at the visual center of the canvas or only a little above or below the center. "
-        f"Write \"{title_text}\" in extremely large, bold, clean sans-serif letters, "
-        "with a subtle glowing outline or halo so it looks like luminous LED text. "
-
-        # 텍스트 규칙
-        "The title text must be the only text in the image. "
-        "Do NOT add any other text, numbers, dates, labels, logos, watermarks, or UI elements. "
-        "Draw the quoted string exactly once. "
-        "Do not create shadow copies, reflections, outlines without fill, duplicated faint versions, or any repeated text. "
-        "No text may appear at the edges or corners; only this one centered line. "
-
-        # 배너/박스 금지
-        "Do not place the text inside any box, banner, signboard, ribbon, frame, or physical container; "
-        "render only clean glowing letters directly over the illuminated background. "
-
-        "Do not draw quotation marks."
+        # 텍스트 완전 금지 + 첨부 이미지 텍스트 무시
+        "Completely ignore any text or typography that appears in the attached reference image. "
+        "Do NOT draw any text, letters, numbers, logos, icons, UI elements, or watermarks anywhere in the image. "
+        "The final result must be a pure illustration with no text at all."
     )
 
     return prompt.strip()
@@ -436,12 +423,12 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 9  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+    run_id = 10  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\goheung.png"
-    festival_name_ko = "제 15회 고흥 우주항공 축제"
-    festival_period_ko = "2025.05.03 ~ 2025.05.06"
-    festival_location_ko = "고흥군 봉래면 나로우주센터 일원"
+    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\arco.png"
+    festival_name_ko = "예술 인형 축제"
+    festival_period_ko = "2025.11.04 ~ 2025.11.09"
+    festival_location_ko = "아르코꿈밭극장, 텃밭스튜디오"
 
     # 2) 필수값 체크
     missing = []

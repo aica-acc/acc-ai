@@ -86,81 +86,40 @@ def _build_streetlamp_banner_prompt_en(
 
     base_scene_en = _norm(base_scene_en)
     details_phrase_en = _norm(details_phrase_en)
-    name_text = _norm(name_text)
-    period_text = _norm(period_text)
-    location_text = _norm(location_text)
+    # 텍스트는 전혀 쓰지 않을 거라 실제 프롬프트에서는 사용하지 않음
+    _ = (_norm(name_text), _norm(period_text), _norm(location_text))
 
     prompt = (
-        f"Tall 1:3 vertical illustration of {base_scene_en}, "
-        "using the attached poster image only as reference for bright colors, lighting and atmosphere "
-        f"but creating a completely new scene with {details_phrase_en}. "
-        "Design this image as a clean standalone 1:3 vertical festival banner artwork, "
-        "not shown hanging on any streetlamp, pole, wire, wall, or building, and with no surrounding street or environment. "
-        "Leave small safe margins at the very top and bottom so that no important text is cut off when the banner is printed or trimmed. "
+        # 기본 장면 설명 (포스터/배너라는 말은 아예 안 씀)
+        f"Tall 1:3 vertical illustration showing {base_scene_en}, "
+        "in a warm, colorful, storybook style, as if it were a frame from an animated film. "
+        "Use the attached image only as very loose inspiration for overall color palette and lighting, "
+        f"but create a completely new composition with {details_phrase_en}. "
 
-        # 👉 텍스트 위치/간격: 상단 중앙 + 서로 가깝게
-        "Place exactly three horizontal lines of text in the upper central area of the banner, "
-        "all perfectly center-aligned just above the vertical middle of the canvas, not near the very top edge. "
-        "Keep these three lines visually close to one another as a single compact text block, "
-        "with only small and even vertical gaps between the top, middle, and bottom lines, "
-        "so that the period, title, and location feel tightly grouped as one unit. "
+        # 1) 순수 이미지 자체만, 어떤 ‘디자인’ 구조도 아닌 자연스러운 씬
+        "This must look like a natural scene illustration, not like a designed poster, flyer, or banner. "
+        "Do not create large empty rectangles or panels that look like they are reserved for titles or captions. "
+        "Fill the whole canvas edge-to-edge with characters, props, scenery, and background details. "
 
-        f"On the middle line, write \"{name_text}\" in extremely large, ultra-bold sans-serif letters, "
-        "the largest text in the entire image and clearly readable from a very long distance. "
-        "Make this title block so large that it visually dominates the compact text group, "
-        "and it must never look like a small caption or subtitle. "
-        f"On the top line, above the title, write \"{period_text}\" in smaller bold sans-serif letters, "
-        "but still keep these letters big, bright, and clearly readable from far away, not tiny caption text. "
-        f"On the bottom line, below the title, write \"{location_text}\" in a size slightly smaller than the top line, "
-        "but still as bold headline text, never thin or subtle. "
+        # 2) 참고 이미지의 텍스트/로고/타이틀 블록은 완전히 무시
+        "Completely ignore and discard all text, numbers, logos, and title areas in the attached image. "
+        "Do not copy, trace, or mimic any blocks of solid color where the original poster had writing. "
+        "Where there used to be writing, instead paint puppets, people, decorations, lights, or background scenery. "
 
-        "All three lines must be drawn in the foremost visual layer, clearly on top of every background element, "
-        "character, object, and effect in the scene, and nothing may overlap, cover, or cut through any part of the letters. "
-        "Draw exactly these three lines of text once each. Do not draw any second copy, shadow copy, reflection, "
-        "mirrored copy, outline-only copy, blurred copy, or partial copy of any of this text anywhere else in the image, "
-        "including on the ground, sky, buildings, decorations, or interface elements. "
-        "Do not add any other text at all: no extra words, labels, dates, numbers, logos, watermarks, or UI elements "
-        "beyond these three lines. "
-        "Do not place the text on any separate banner, signboard, panel, box, frame, ribbon, or physical board; "
-        "draw only clean floating letters directly over the background. "
-        "The quotation marks in this prompt are for instruction only; do not draw quotation marks in the final image."
+        # 3) 최종 결과에는 어떤 글자/숫자/로고도 절대 금지
+        "ABSOLUTELY NO TEXT in the final image: no words, no letters, no numbers, no symbols, no logos, "
+        "no banners with writing, and no signboards. "
+        "This includes Korean characters, English letters, and any glyphs that could be read as writing. "
+        "Every shape in the image must clearly read as illustration, not typography. "
+
+        # 4) 네거티브 키워드(모델이 볼 수 있게 문장 형태로 추가)
+        "Avoid: text, title, typography, labels, captions, dates, numbers, logos, signboards, subtitles, "
+        "watermarks, UI, poster layout."
     )
 
-    # f"{base_scene_en}의 높이 1:3 세로 삽화,"
-    # "첨부된 포스터 이미지를 밝은 색상, 조명 및 분위기에만 참고할 수 있습니다."
-    # f"하지만 {details_phrase_en}으로 완전히 새로운 장면을 만들고 있습니다."
-    # "이 이미지를 깨끗한 독립형 1:3 수직 축제 배너 아트워크로 디자인하세요,"
-    # 가로등, 기둥, 철조망, 벽, 건물에 걸려 있는 것이 표시되지 않으며, 주변 도로나 환경이 없습니다
-    # 배너가 인쇄되거나 다듬어질 때 중요한 텍스트가 잘리지 않도록 상단과 하단에 작은 안전 여백을 남겨두세요
-
-    # # 👉 텍스트 위치/간격: 상단 중앙 + 서로 가깝게
-    # 배너의 상단 중앙 영역에 정확히 세 줄의 가로줄 텍스트를 배치합니다
-    # "모든 것이 캔버스의 수직 중앙 바로 위, 맨 위 가장자리 근처가 아닌 완벽하게 중앙에 정렬되어 있습니다."
-    # "이 세 줄을 하나의 컴팩트한 텍스트 블록으로 시각적으로 서로 가깝게 유지하세요,"
-    # "위, 중간, 아래쪽 선 사이에 작고 고른 수직 간격만 있습니다,"
-    # "기간, 제목, 위치가 하나의 단위로 긴밀하게 묶여 있는 느낌을 줍니다."
-
-    # f"가운데 줄에 \\"{name_text}\"를 매우 크고 굵은 산세리프 문자로 씁니다,"
-    # "전체 이미지에서 가장 큰 텍스트이며 매우 먼 거리에서도 명확하게 읽을 수 있습니다."
-    # "이 제목 블록을 시각적으로 컴팩트 텍스트 그룹을 지배할 정도로 크게 만드세요,"
-    # "그리고 그것은 절대 작은 자막이나 자막처럼 보여서는 안 됩니다."
-    # f"제목 위 상단 줄에 작은 굵은 산세리프 문자로 \\"{period_text}\\"라고 적습니다,"
-    # "하지만 여전히 이 글자들은 작은 캡션 텍스트가 아닌 멀리서도 크고 밝고 선명하게 읽을 수 있도록 유지하세요."
-    # f"아래쪽 줄에는 제목 아래에 위쪽 줄보다 약간 작은 크기로 \\"{location_text}\\"라고 적습니다."
-    # "하지만 여전히 대담한 헤드라인 텍스트로, 결코 얇거나 미묘하지 않습니다."
-
-    # "세 줄 모두 모든 배경 요소 위에 명확하게 가장 앞쪽 시각적 층에 그려야 합니다,"
-    # "장면에서 등장인물, 객체, 효과는 글자의 어떤 부분도 겹치거나 덮거나 자를 수 없습니다."
-    # "이 세 줄의 텍스트를 각각 한 번씩 정확하게 그리세요. 두 번째 복사본, 그림자 복사본, 반사를 그리지 마세요,"
-    # "이미지의 다른 부분에 있는 이 텍스트의 mirrored 사본, 개요 전용 사본, 흐릿한 사본 또는 부분 사본"
-    # 지상, 하늘, 건물, 장식 또는 인터페이스 요소를 포함하여
-    # "다른 텍스트는 전혀 추가하지 마세요: 단어, 라벨, 날짜, 숫자, 로고, 워터마크 또는 UI 요소는 추가하지 마세요."
-    # "이 세 줄을 beyond."
-    # "텍스트를 별도의 배너, 간판, 패널, 상자, 프레임, 리본 또는 물리적 보드에 배치하지 마십시오;"
-    # 배경 바로 위에 깨끗한 떠다니는 글자만 그립니다
-    # "이 프롬프트의 따옴표는 지시용이므로 최종 이미지에 따옴표를 그리지 마세요."
-
     return prompt.strip()
+
+
 
 
 # -------------------------------------------------------------
@@ -499,10 +458,10 @@ def main() -> None:
     run_id = 10  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
     # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\goheung.png"
-    festival_name_ko = "제 15회 고흥 우주항공 축제"
-    festival_period_ko = "2025.05.03 ~ 2025.05.06"
-    festival_location_ko = "고흥군 봉래면 나로우주센터 일원"
+    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\arco.png"
+    festival_name_ko = "예술 인형 축제"
+    festival_period_ko = "2025.11.04 ~ 2025.11.09"
+    festival_location_ko = "아르코꿈밭극장, 텃밭스튜디오"
 
     # 2) 혹시라도 비어 있으면 바로 알려주기
     missing = []

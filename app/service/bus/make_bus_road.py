@@ -120,8 +120,9 @@ def _split_festival_count_and_name(full_name_ko: str) -> Tuple[str, str]:
     return normalized_count, name_ko
 
 
+
 # -------------------------------------------------------------
-# 2) 버스 차도용 프롬프트 조립 (단순 배경 + 중앙 정렬 텍스트)
+# 2) 버스 차도용 프롬프트 조립 (완전 무텍스트 + 양쪽 꾸밈, 중앙은 자연스러운 배경)
 # -------------------------------------------------------------
 def _build_bus_road_prompt_en(
     count_text: str,
@@ -133,58 +134,79 @@ def _build_bus_road_prompt_en(
     details_phrase_en: str,
 ) -> str:
     """
-    절대 중앙 꾸밈 금지 + 양쪽 사이드만 꾸밈 + 자연스럽게 연결된 배경을 강제하는 3.7:1 버스 광고 프롬프트
+    3.7:1 버스 차도용 광고용 **완전 무텍스트** 배경 프롬프트.
+
+    규칙:
+    1) 첨부 포스터의 텍스트(제목, 로고, 슬로건 등)는 전혀 참고하지 않는다.
+    2) 양쪽 끝부분에만 꾸밈 요소/캐릭터/오브젝트를 배치하고,
+       중앙 영역은 나중에 글자가 들어갈 수 있도록 비교적 단순하지만,
+       중앙에 따로 패널/띠/박스를 만들지 않고 장면이 자연스럽게 이어지게 한다.
+    3) 결과 이미지에는 어떤 텍스트(글자/숫자/로고/표지판 글씨 등)도 절대 들어가지 않는다.
     """
 
     def _norm(s: str) -> str:
         return " ".join(str(s or "").split())
 
-    count_text      = _norm(count_text)
-    name_en_text    = _norm(name_en_text)
-    name_ko_text    = _norm(name_ko_text)
-    period_text     = _norm(period_text)
-    location_text   = _norm(location_text)
-    base_scene_en   = _norm(base_scene_en)
+    # 텍스트는 렌더링에 쓰지 않지만, 분위기 설명용으로만 사용
+    count_text = _norm(count_text)
+    name_en_text = _norm(name_en_text)
+    name_ko_text = _norm(name_ko_text)
+    period_text = _norm(period_text)
+    location_text = _norm(location_text)
+    base_scene_en = _norm(base_scene_en)
     details_phrase_en = _norm(details_phrase_en)
 
     prompt = (
-        f"Ultra-wide 3.7:1 festival poster-style illustration of {base_scene_en}, "
-        "using the attached poster only for reference to overall color palette and mood, "
-        "but creating a completely new composition. "
+        # 기본 설명
+        "Ultra-wide 3.7:1 cinematic festival illustration for a bus-side road banner. "
 
-        # ⭐ 가장 중요한 규칙 (중앙부분 금지구역)
-        "The CENTRAL REGION of the canvas must remain a CLEAN, EMPTY, UNDECORATED area "
-        "with only a smooth, naturally blended continuation of the left and right backgrounds. "
-        "Do NOT place any rockets, characters, symbols, objects, patterns, shapes, or decorations "
-        "in the central region. Absolutely nothing except the text may appear there. "
+        # [규칙 1] 포스터 텍스트는 전혀 참고하지 않기
+        "Use the attached poster image only as a reference for overall color palette, "
+        "lighting, and mood. Completely ignore and do not copy any text, titles, "
+        "logos, or typography from the poster. "
 
-        # ⭐ 배경 스타일: 양쪽 사이드 배경 + 자연스럽게 중앙으로 페이드
-        "On the far left and far right sides, place the key decorative festival elements inspired by "
-        f"{details_phrase_en}, such as rockets, mascots, or symbolic objects. "
-        "These side elements must stay strictly within the outer 20–25% of each side. "
-        "The background must seamlessly blend toward the center, becoming simple and unobtrusive near the text area, "
-        "but it does NOT have to be white—just clean and softly merged into the middle. "
+        # 축제 정보는 분위기 설정용으로만 사용 (텍스트로 그리지 않기)
+        f"Visually express the atmosphere of the festival {name_en_text}, "
+        f"using {base_scene_en} as the main setting and enriching it with visual details "
+        f"such as {details_phrase_en}. Use the festival information only to inspire the "
+        "mood, characters, and environment, not as written text in the image. "
 
-        # ⭐ 텍스트 블록 위치
-        "Place a single block of festival text exactly in the horizontal center of the canvas, "
-        "center-aligned, with generous empty margins on both sides. "
+        # [규칙 2] 양쪽 끝단 꾸밈
+        "Place most decorative elements, characters, and symbolic festival objects "
+        "near the far left and far right edges of the banner. These side areas can be "
+        "rich and detailed, full of activity and visual interest. "
 
-        f"Top line: \"{count_text}\" small and bold. "
-        f"Next line: \"{name_en_text}\" medium-large bold subtitle. "
-        f"Main title line: \"{name_ko_text}\" extremely large and heavy, the MOST dominant text. "
-        f"Next line: \"{period_text}\" smaller bold line. "
-        f"Final line: \"{location_text}\" slightly smaller, placed close beneath the period line. "
+        # 중앙은 자연스럽게 이어지는 배경 + 박스/띠/선 금지
+        "In the central horizontal region (approximately the middle 40% of the width), "
+        "keep the scene visually calmer and less crowded, showing only the natural "
+        "continuation of the same environment, such as night sky, distant buildings, "
+        "clouds, or a soft gradient. "
+        "Do NOT create any separate panels, rectangles, boxes, color strips, banners, "
+        "or horizontal bars in this area. The center must not look like a blank text "
+        "box or UI strip; it should look like a continuous part of the same scene, "
+        "just with fewer objects. "
+        "Also do not add any solid bars or panels along the very top or bottom edges "
+        "of the canvas. "
 
-        # 텍스트 규칙
-        "All text must be drawn in the very front layer, with NO object overlapping or touching the letters. "
-        "Draw each quoted string exactly once and do not add any other text of any kind. "
-        "Do not place the text inside a box, label, banner, frame, ribbon, or signboard; "
-        "the letters must float cleanly over the simple center background. "
+        # [규칙 3] 텍스트 절대 금지
+        "The illustration must be completely text-free: do NOT draw any letters, "
+        "numbers, words, logos, brand names, signboards with writing, banners with "
+        "text, captions, or typographic shapes in any language. "
+        "Do not hide or disguise text as patterns, scribbles, symbols, or tiny marks "
+        "on objects, costumes, or buildings; there must be absolutely no recognizable "
+        "characters anywhere in the image. Override any default tendency to add text "
+        "and generate the scene with zero text of any kind. "
 
-        "Do not draw quotation marks."
+        # 렌더링 마무리 지시
+        "Focus purely on characters, environment, lighting, and composition, with "
+        "smooth high-quality rendering and vivid but harmonious colors. "
+        "Do not add frames, borders, UI overlays, graphic design layout elements, or "
+        "separate background panels; it should look like a single continuous "
+        "illustration painted directly on the side of a bus."
     )
 
     return prompt.strip()
+
 
 
 
@@ -536,10 +558,10 @@ def main() -> None:
     # 로컬 포스터 파일 경로 (예: PROJECT_ROOT/app/data/banner/...)
     # 축제명에 회차를 같이 넣어도 되고, 안 넣어도 됨
     # 예: "제7회 담양산타축제" 또는 "담양산타축제"
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\goheung.png"
-    festival_name_ko = "제 15회 고흥 우주항공 축제"
-    festival_period_ko = "2025.05.03 ~ 2025.05.06"
-    festival_location_ko = "고흥군 봉래면 나로우주센터 일원"
+    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\arco.png"
+    festival_name_ko = "예술 인형 축제"
+    festival_period_ko = "2025.11.04 ~ 2025.11.09"
+    festival_location_ko = "아르코꿈밭극장, 텃밭스튜디오"
 
     # 2) 필수값 체크
     missing = []

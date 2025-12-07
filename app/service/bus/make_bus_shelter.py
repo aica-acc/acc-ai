@@ -190,12 +190,13 @@ def _build_bus_shelter_prompt_en(
     details_phrase_en: str,
 ) -> str:
     """
-    버스쉘터(세로 포스터)용 Seedream 영어 프롬프트 생성.
+    버스쉘터(세로 포스터)용 Seedream 영어 프롬프트 생성 (텍스트 제거 + 순수 포스터 이미지 버전).
 
-    - 중앙(또는 중앙보다 아주 살짝 위)에 '서브타이틀'이 가장 크게 들어가고
-    - 축제명은 위/아래 중 한쪽에 상대적으로 작게 배치되는 구조.
-    - 버스쉘터 구조물(유리, 기둥 등)은 그리지 않고 순수 포스터 이미지만 생성.
-    - 캔버스 가장자리에 흰색 테두리 / 여백 / 종이 프레임이 나오지 않도록 강하게 금지.
+    규칙:
+    1) 첨부 이미지의 글자/로고/숫자는 전혀 참고하지 않는다.
+    2) 중앙에 메인 일러스트가 크게 배치된다.
+    3) 최종 결과물에는 텍스트가 절대 들어가지 않는다.
+    4) 주변 환경 없이 '순수 광고 이미지'만 생성한다. (목업 X)
     """
 
     def _norm(s: str) -> str:
@@ -203,50 +204,36 @@ def _build_bus_shelter_prompt_en(
 
     base_scene_en = _norm(base_scene_en)
     details_phrase_en = _norm(details_phrase_en)
-    subtitle_text = _norm(subtitle_text)
-    festival_name_text = _norm(festival_name_text)
+    # subtitle_text, festival_name_text 는 분위기/컨셉 참고용 인자일 뿐,
+    # 실제 프롬프트에서는 텍스트를 그리도록 사용하지 않는다.
 
     prompt = (
-        # 전체 장면
-        f"Tall vertical festival poster illustration themed around {base_scene_en}, "
-        "using the attached poster image only as reference for overall color palette, lighting, and visual mood, "
-        "but creating a completely new composition as a clean printable poster artwork. "
-        "Do not draw any bus shelter, frame, glass, street, floor, people, or vehicles; "
-        "create only a flat rectangular illustration that could be printed and mounted by itself. "
-        "The artwork must extend all the way to the edges of the canvas, with NO white borders, margins, paper edges, "
-        "frames, outlines, or empty edge strips; the background colors and illustration must reach every edge of the image. "
+        # 4) 순수 포스터 이미지 자체만 (짧은 버전)
+        "Create only the pure festival poster illustration as a flat image. "
+        "Do not generate any surrounding environment or mockup such as walls, bus shelters, billboards, streets, or frames. "
+        "The illustration itself must fill the entire canvas. "
 
-        # 중앙 메인 일러스트
-        "In the center area of the artwork, place the PRIMARY FESTIVAL ILLUSTRATION: "
-        f"large, iconic visual elements inspired by {details_phrase_en}, such as rockets, mascots, symbolic objects, "
-        "or thematic scenery. This illustration should occupy the central visual zone and feel like the main attraction "
-        "of the poster, but it must not hide or cut through any text. "
+        # 1) 첨부 이미지의 글자는 무시, 색감/무드만 참고
+        f"The visual theme is based on {base_scene_en}. "
+        "Use the attached poster image only as a loose reference for overall color palette, atmosphere, and lighting. "
+        "Completely ignore and do not copy any text, logos, numbers, or typography from the attached image. "
 
-        # 서브타이틀: 화면 중앙 근처, 가장 큰 텍스트
-        "Place the SUBTITLE line at the visual center of the canvas, or only a very small distance above the geometric center. "
-        "It must not sit near the top edge of the poster. "
-        "Treat the SUBTITLE as the MAIN TITLE of the poster. "
-        f"Write \"{subtitle_text}\" as the largest text element in the whole image, clearly larger than the festival name text, "
-        "in extremely large, bold, clean sans-serif letters, with comfortable empty margin above and below it. "
+        # 2) 중앙 메인 일러스트
+        "Around the center of the canvas, place one large main illustration: "
+        f"iconic visual elements inspired by {details_phrase_en}, such as mascots, symbolic objects, or key festival scenery. "
+        "This main illustration should be the clear focal point with a balanced composition and comfortable breathing space. "
 
-        # 축제명: 위/아래 한쪽에 조금 더 작게
-        "Place the FESTIVAL NAME line near either the upper third or lower third of the poster, "
-        "clearly separated from the subtitle so that the subtitle remains the visual focus. "
-        f"Write \"{festival_name_text}\" in medium-large bold letters that are noticeably smaller than the subtitle letters. "
+        # 캔버스 끝까지 꽉 채우기 (프레임/여백 금지)
+        "The background and illustration must extend fully to every edge of the canvas with no white borders, "
+        "no margins, no paper edges, and no frames. "
 
-        # 텍스트 공통 규칙
-        "All text must float cleanly above the illustration without any objects touching, overlapping, or cutting through the letters. "
-        "Draw each quoted string exactly once and do not add any other text, numbers, labels, slogans, watermarks, or UI elements. "
-        "Do not create shadows, reflections, outlines, duplicates, or secondary copies of the text anywhere else. "
-
-        # 배너/박스 금지
-        "Do not place the text inside any box, banner, ribbon, signboard, frame, or physical container; "
-        "draw only clean floating letters directly over the artwork. "
-
-        "Do not draw quotation marks."
+        # 3) 텍스트 절대 금지
+        "Absolutely no text: do not draw any letters, words, numbers, logos, UI icons, or symbols that look like writing "
+        "in any language. If an object would normally have writing on it, keep that area blank or fill it with simple shapes instead."
     )
 
     return prompt.strip()
+
 
 
 
@@ -564,10 +551,10 @@ def main() -> None:
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
     run_id = 10  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\goheung.png"
-    festival_name_ko = "제 15회 고흥 우주항공 축제"
-    festival_period_ko = "2025.05.03 ~ 2025.05.06"
-    festival_location_ko = "고흥군 봉래면 나로우주센터 일원"
+    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\arco.png"
+    festival_name_ko = "예술 인형 축제"
+    festival_period_ko = "2025.11.04 ~ 2025.11.09"
+    festival_location_ko = "아르코꿈밭극장, 텃밭스튜디오"
 
     # 2) 필수값 체크
     missing = []
