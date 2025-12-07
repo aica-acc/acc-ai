@@ -143,7 +143,7 @@ def get_region_trend_1year(keyword: str, host_name: str, festival_start_date: st
     weekly_data = []
     
     try:
-        res = requests.post(url, headers=headers, data=json.dumps(body).encode("utf-8"), timeout=5)
+        res = requests.post(url, headers=headers, data=json.dumps(body).encode("utf-8"), timeout=120)
         data = res.json()
         
         # 데이터 유효성 체크

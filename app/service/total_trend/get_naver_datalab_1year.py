@@ -96,7 +96,7 @@ def get_naver_datalab_1year(keyword: str, festival_title: str, festival_start_da
     # 3) Request → Response
     # -----------------------------
     try:
-        res = requests.post(url, headers=headers, data=json_bytes, timeout=10)
+        res = requests.post(url, headers=headers, data=json_bytes, timeout=120)
         res.encoding = "utf-8"
 
         data = res.json()

@@ -260,7 +260,7 @@ def download_image_fixed(url: str, idx: int) -> str | None:
 
     try:
         # 2) 첫 번째 시도 (기본 요청)
-        resp = requests.get(url, headers=HEADERS, timeout=12)
+        resp = requests.get(url, headers=HEADERS, timeout=120)
         if resp.status_code == 200:
             with open(file_path, "wb") as f:
                 f.write(resp.content)
@@ -272,7 +272,7 @@ def download_image_fixed(url: str, idx: int) -> str | None:
 
     # 3) fallback: SSL 검증 끄고 재시도
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=12, verify=False)
+        resp = requests.get(url, headers=HEADERS, timeout=120, verify=False)
         if resp.status_code == 200:
             with open(file_path, "wb") as f:
                 f.write(resp.content)
