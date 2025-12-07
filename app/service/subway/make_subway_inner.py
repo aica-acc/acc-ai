@@ -88,11 +88,12 @@ def _build_subway_inner_prompt_en(
     details_phrase_en: str,
 ) -> str:
     """
-    지하철 차내액자(1446x1024)용 Seedream 영어 프롬프트 생성.
+    지하철 차내액자(1446x1024)용 Seedream 영어 프롬프트 생성 - 텍스트 없는 순수 이미지 버전.
 
-    - 좌상단에만 텍스트 블록
-    - 우측/우하단에 축제 핵심 일러스트
+    - 하나의 연속된 장면
+    - 우측/우하단에 축제 핵심 일러스트, 좌상단은 비교적 여유 있는 배경
     - 절대 테두리/외곽 여백/종이 포스터 느낌 금지
+    - 결과물에 텍스트는 전혀 들어가지 않음
     """
 
     def _n(s: str) -> str:
@@ -100,8 +101,7 @@ def _build_subway_inner_prompt_en(
 
     base_scene_en = _n(base_scene_en)
     details_phrase_en = _n(details_phrase_en)
-    title_text = _n(title_text)
-    period_text = _n(period_text)
+    # title_text / period_text 는 시그니처 유지용이지만 프롬프트에서는 사용하지 않음
 
     prompt = (
         # 전체 구성
@@ -109,44 +109,40 @@ def _build_subway_inner_prompt_en(
         "using the attached poster image only as a reference for overall color palette, lighting, and mood, "
         "but creating a completely new composition. "
         "Fill the entire 1446:1024 canvas edge-to-edge with the artwork. "
-        "Do NOT draw any outer border, black frame, white margin, paper edge, poster edge, "
-        "matting, or mounting frame around the illustration. "
-        "Do NOT draw any wall, glass, or physical display; just a pure flat digital illustration. "
+        "Do NOT draw any outer border, black frame, white margin, paper edge, or poster edge. "
+        "Do NOT draw any wall, glass, clips, pins, or physical display; the whole canvas itself is a pure flat digital illustration. "
 
-        # 레이아웃 핵심 규칙 – 텍스트
-        "Place ALL TEXT strictly in the UPPER-LEFT CORNER AREA of the canvas. "
-        "Do NOT place text anywhere else. "
-        "The upper-left text block should sit near the top and left edges with only a small safe margin. "
-        f"Top line: \"{title_text}\" in very large bold sans-serif letters. "
-        f"Directly below it: \"{period_text}\" in medium-large bold letters. "
+        # 참고 포스터의 텍스트는 무시
+        "Completely ignore and do not copy any text, letters, numbers, or logos from the attached poster image. "
 
-        # 텍스트 배경/박스 금지
-        "The background behind the text must smoothly continue from the overall illustration, "
-        "using naturally blended colors from the scene. "
-        "ABSOLUTELY DO NOT create any separate solid color block, white rectangle, bright panel, "
-        "box, banner, label, caption bar, or highlighted area behind or around the text. "
-        "The letters must sit directly on top of the illustration itself. "
+        # 레이아웃 핵심 규칙 – 좌상단 여유 + 우측 메인 일러스트
+        "Design one continuous scene that smoothly stretches from the left edge to the right edge, "
+        "with no hard vertical dividing line or feeling of two separate panels. "
+        "Keep the UPPER-LEFT AREA relatively clean and open, using only simple background colors, soft gradients, "
+        "or very subtle details so that this area feels calm and uncluttered. "
+        "Do not place any major characters or bright focal objects in this upper-left area. "
 
-        # 텍스트 규칙
-        "Text must NEVER overlap with characters, objects, or bright effects. "
-        "Keep enough empty space immediately around the letters for readability, "
-        "but do not add any extra shapes to support the text. "
-        "Draw each quoted string EXACTLY once. "
-        "Do not add any other text, numbers, labels, logos, marks, watermarks, or UI elements. "
-        "Do not create shadows, reflections, outlines, glows, duplicate copies, "
-        "or faint background versions of the text. "
-
-        # 일러스트 영역
         "Place the MAIN FESTIVAL ILLUSTRATION on the RIGHT SIDE or LOWER-RIGHT area of the canvas: "
-        f"large, clear visual elements inspired by {details_phrase_en}, such as rockets, mascots, "
-        "symbolic objects, or thematic scenery. "
-        "The illustration must occupy the right half or lower-right quadrant and must NOT appear behind the text. "
-        "The right side should feel visually heavier and more detailed than the left. "
+        f"large, clear visual elements inspired by {details_phrase_en} and the festival theme. "
+        "The right side should feel visually heavier and more detailed than the left, "
+        "but still be part of the same continuous scene. "
 
+        # 텍스트 완전 금지
+        "Do NOT draw any text, letters, words, numbers, labels, logos, marks, watermarks, or UI elements "
+        "anywhere on the canvas. Do not create symbols that look like writing in any language. "
         "Do not draw quotation marks."
     )
 
     return prompt.strip()
+
+
+
+
+
+
+
+
+
 
 
 # -------------------------------------------------------------
@@ -441,12 +437,12 @@ def main() -> None:
     """
 
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
-    run_id = 9  # 에디터 실행 번호 (폴더 이름에도 사용됨)
+    run_id = 10  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\goheung.png"
-    festival_name_ko = "제 15회 고흥 우주항공 축제"
-    festival_period_ko = "2025.05.03 ~ 2025.05.06"
-    festival_location_ko = "고흥군 봉래면 나로우주센터 일원"
+    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\arco.png"
+    festival_name_ko = "예술 인형 축제"
+    festival_period_ko = "2025.11.04 ~ 2025.11.09"
+    festival_location_ko = "아르코꿈밭극장, 텃밭스튜디오"
 
     # 2) 필수값 체크
     missing = []

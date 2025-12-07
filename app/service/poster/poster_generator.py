@@ -11,6 +11,9 @@ else:
     openai.api_key = OPENAI_API_KEY
 
 def create_strategy_report(user_theme, pdf_data_dict, poster_trend_data, google_trend_data, naver_datalab_data, naver_search_data):
+    """
+    (기존 유지) 전략 리포트 생성 함수
+    """
     try:
         return {
             "strategy_text": "AI 전략 보고서...",
@@ -19,89 +22,81 @@ def create_strategy_report(user_theme, pdf_data_dict, poster_trend_data, google_
     except:
         return {}
 
-# 2단계: 마스터 프롬프트 생성 (포스터 느낌 극대화)
+# 2단계: 마스터 프롬프트 생성 (High-End 2D Poster Style)
 def create_master_prompt(user_theme, analysis_summary, poster_trend_report, strategy_report):
-    print(f"  [poster_generator] AI 프롬프트 기획 시작 (Commercial Art Focus)...")
+    print(f"  [poster_generator] AI 프롬프트 기획 시작 (High-End Poster Style)...")
     
     try:
         analysis_str = json.dumps(analysis_summary, ensure_ascii=False)
 
+        # [System Prompt] 3D 제거 + 고퀄리티 2D 포스터 스타일 정의
         system_prompt = f"""
-        You are a world-class Art Director. Design 4 distinct Festival Poster concepts.
+        You are a world-class Art Director creating a **High-End Festival Poster**.
+        Your goal is to generate 4 distinct, **commercially viable** poster concepts.
 
-        [CRITICAL RULES]
-        1. **Poster Aesthetics:** The image MUST visually function as a **promotional festival poster**. 
-           - **Do NOT describe a generic background.** Describe a **finished, highly composed promotional artwork.**
-           - **Typography Balance:** Korean text should be prominent but NOT overpowering (15-25% of total composition)
-           - The poster should look like professional festival/event promotional material you'd see in a gallery or subway station
-        2. **English Only:** `visual_prompt` MUST be in English.
-        3. **Include Korean Text Only:** The final visual prompt must contain instructions for Korean Title, Date, and Location to be rendered in the image. Korean typography should be the centerpiece of the design with artistic, creative placement and 3D effects. NO ENGLISH TEXT allowed.
-        [JSON FORMAT]
+        [🚫 CRITICAL NEGATIVE CONSTRAINTS]
+        - **NO 3D RENDER STYLES:** Do NOT use "3D render", "CGI", "plastic", "clay", "toy-like".
+        - **NO AMATEUR ART:** Avoid "sketch", "doodle", "low quality", "blurry", "distorted".
+        - **TEXT SIZE:** The title must be readable, but **keep other text SMALL and ELEGANT**. Do NOT cover the entire image with giant text.
+
+        [✨ DESIGN QUALITY RULES]
+        1. **Professional Finish:** The image must look like a printed poster (CMYK texture, matte finish).
+        2. **Composition:** Use "Rule of Thirds" or "Central Symmetrical" layouts. Leave **Negative Space** for text.
+        3. **Lighting:** Use "Cinematic Lighting", "Volumetric Fog", or "Soft Studio Lighting" to add depth without making it 3D.
+
+        [🎨 4 MANDATORY STYLE CONCEPTS]
+        Create prompts for these 4 specific styles (replace '3D' with 'Flat/Illustrative'):
+
+        1. **"Modern Vector Illustration"**
+           - Style: Clean lines, flat colors, geometric shapes, minimalist.
+           - Ref: "Swiss Design", "Bauhaus", "Vector Art".
+           - Vibe: Trendy, Hip, Young.
+
+        2. **"Cinematic Photography"** (If theme allows) OR **"Watercolor Painting"**
+           - Style (Photo): High-resolution, dramatic depth of field, golden hour.
+           - Style (Paint): Soft watercolor textures, dreamy, artistic, "Studio Ghibli" vibes.
+           - Vibe: Emotional, Grand, Atmospheric.
+
+        3. **"Retro/Vintage Print"**
+           - Style: Halftone patterns, paper texture, washed-out colors, 70s/80s typography.
+           - Ref: "Risograph", "Screen Print".
+           - Vibe: Nostalgic, Warm, Classic.
+
+        4. **"Neon/Cyberpunk (2D)"** OR **"Korean Traditional Ink (Sumukhwa)"**
+           - Style (Neon): Glowing lines on dark background (2D anime style), vibrant.
+           - Style (Ink): Brush strokes, black and white with red accents, elegant empty space.
+           - Vibe: Night festival, energetic OR Traditional, calm.
+
+        [OUTPUT FORMAT - JSON ONLY]
         {{
             "master_prompt": {{
                 "prompt_options": [
                     {{
-                        "style_name": "Concept Name",
-                        "text_content": {{ ... }},
-                        "visual_prompt": "A professional promotional poster for... (English description with typography)" 
-                    }}
+                        "style_name": "Modern Vector",
+                        "visual_prompt": "Detailed prompt describing the visual..."
+                    }},
+                    ... (Total 4 items)
                 ]
-            }},
-            "status": "success"
+            }}
         }}
         """
         
+        # ✅ [User Prompt] 데이터 전달 및 심플한 실행 명령
         user_prompt = f"""
         [Theme]: {user_theme}
         [Info]: {analysis_str}
         ---
-        Design EXACTLY 4 diverse poster concepts with the following artistic styles:
-
-        1. 3D Artistic Architecture & Objects (3D 아트적 건축물/오브젝트)
-        - Imaginative 3D structures or symbolic festival objects with creative architecture
-        - Artistic rendering (NOT photorealistic - more stylized and creative)
-        - Vibrant colors, playful compositions with artistic exaggeration
-        - Festival theme integrated into the 3D structure design
-
-        2. Geometric Technical Infographic (기하학적 테크니컬 디자인)
-        - Clean geometric shapes, technical diagrams, and infographic elements
-        - Modern, sophisticated layout with precise lines and circles
-        - Space/science aesthetic with a contemporary feel
-        - Typography integrated into the geometric design
-
-        3. Modern Art Gallery Exhibition (모던 아트 갤러리 전시회)
-        - High-end museum exhibition poster style
-        - Clean, sophisticated composition with a focus on "Art as Hero"
-        - Generous negative space (white or solid color) for a premium feel
-        - Typography: Elegant, minimal, and professional (often sans-serif)
-        - Layout: Asymmetric text placement (e.g., small text at bottom corners) to let the artwork breathe
-        - Vibe: Cultural, expensive, sophisticated, "Picture-like"
-
-        4. Cinematic Sci-Fi & Tech Art (시네마틱 SF & 테크 아트)
-        - Grand scale composition with dark backgrounds and glowing elements
-        - High-tech aesthetic: blueprints, neon lines, geometric wireframes (like the rocket reference)
-        - Dramatic lighting and cinematic perspective (looking up at a massive structure)
-        - Typography: Integrated into the tech lines or bold cinematic title
-        - Vibe: "Blockbuster movie poster", "Futuristic", "Grand", "Cool"
-
-        CRITICAL REQUIREMENTS FOR ALL 4 CONCEPTS:
-        - **Typography Size:** MUST NOT exceed 25% of the total poster area. (Keep it elegant)
-        - **LAYOUT DIVERSITY:** DO NOT default to centered text for all posters.
-        - **Style 3 (Gallery):** Use asymmetric, minimal text placement.
-        - **Style 4 (Sci-Fi):** Use bold, cinematic text placement.
-        - ARTISTIC and ILLUSTRATIVE styles ONLY (avoid photorealistic approaches)
-        - Korean text ONLY (NO English text whatsoever)
-        - Creative, artistic Korean lettering integrated naturally
-        - Premium festival poster design with artistic merit
-        
-        Focus on ARTISTIC ILLUSTRATION rather than photography or realism.
-
+        Based on the [CRITICAL NEGATIVE CONSTRAINTS] and [4 MANDATORY STYLE CONCEPTS] defined above,
+        generate 4 high-quality poster prompts.
         """
         
         client = openai.OpenAI()
         response = client.chat.completions.create(
             model="gpt-4-turbo", 
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
             response_format={"type": "json_object"}
         )
         

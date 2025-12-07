@@ -133,7 +133,7 @@ def _download_image_bytes(path_or_url: str) -> bytes:
     # HTTP(S)인 경우
     if s.startswith("http://") or s.startswith("https://"):
         try:
-            resp = requests.get(s, timeout=20)
+            resp = requests.get(s, timeout=120)
             resp.raise_for_status()
             return resp.content
         except Exception as e:
@@ -383,55 +383,26 @@ def _build_road_banner_prompt_en(
     def _norm(s: str) -> str:
         return " ".join(str(s or "").split())
 
+    # 씬 묘사만 정리해서 사용하고, 텍스트 관련 인자는 사용하지 않음
     base_scene_en = _norm(base_scene_en)
     details_phrase_en = _norm(details_phrase_en)
-    name_text = _norm(name_text)
-    period_text = _norm(period_text)
-    location_text = _norm(location_text)
+    _ = _norm(name_text)
+    _ = _norm(period_text)
+    _ = _norm(location_text)
 
     prompt = (
-        f"Ultra-wide 4:1 festival banner illustration of {base_scene_en}, "
-        "using the attached poster image only as reference for bright colors, lighting and atmosphere "
-        f"but creating a completely new scene with {details_phrase_en}. "
-        "Place three lines of text near the horizontal center of the banner, all perfectly center-aligned. "
-        f"On the middle line, write \"{name_text}\" in extremely large, ultra-bold sans-serif letters, "
-        "the largest text in the entire image and clearly readable from a very long distance. "
-        f"On the top line, directly above the title, write \"{period_text}\" in smaller bold sans-serif letters, "
-        "but still clearly readable from far away. "
-        f"On the bottom line, directly below the title, write \"{location_text}\" in a size slightly smaller than the top line. "
-        "All three lines must be drawn in the foremost visual layer, clearly on top of every background element, "
-        "character, object, and effect in the scene, and nothing may overlap, cover, or cut through any part of the letters. "
-        "Draw exactly these three lines of text once each. Do not draw any second copy, shadow copy, reflection, "
-        "mirrored copy, outline-only copy, blurred copy, or partial copy of any of this text anywhere else in the image, "
-        "including on the ground, sky, water, buildings, decorations, or interface elements. "
-        "Do not add any other text at all: no extra words, labels, dates, numbers, logos, watermarks, or UI elements "
-        "beyond these three lines. "
-        "Do not place the text on any banner, signboard, panel, box, frame, ribbon, or physical board; "
-        "draw only clean floating letters directly over the background. "
-        "The quotation marks in this prompt are for instruction only; do not draw quotation marks in the final image."
+        f"Ultra-wide 4:1 festival illustration of {base_scene_en}, "
+        "using the attached poster image only as reference for overall colors, lighting, mood and atmosphere. "
+        f"Show {details_phrase_en}. "
+        "The output must be a pure banner illustration only, as a flat 4:1 image filling the entire frame. "
+        "Do NOT show any surrounding real-world environment or mockup such as walls, streets, poles, cars, people looking at the banner, "
+        "bus stops, billboards, frames, devices, UI, or any physical space around the image. "
+        "Ignore and completely discard all text that appears in the attached poster image. "
+        "Do NOT draw any text, letters, numbers, logos, symbols, or watermarks anywhere in the final image."
     )
 
-    # f"초광각 4:1 축제 배너 일러스트 {base_scene_en},"
-    # "첨부된 포스터 이미지를 밝은 색상, 조명 및 분위기에만 참고할 수 있습니다."
-    # f"하지만 {details_phrase_en}으로 완전히 새로운 장면을 만들고 있습니다."
-    # 배너의 가로 중앙 근처에 세 줄의 텍스트를 배치하고, 모두 완벽하게 중앙에 정렬합니다
-    # f"가운데 줄에 \\"{name_text}\"를 매우 크고 굵은 산세리프 문자로 씁니다,"
-    # "전체 이미지에서 가장 큰 텍스트이며 매우 먼 거리에서도 명확하게 읽을 수 있습니다."
-    # f"제목 바로 위의 맨 위 줄에 \\"{period_text}\"를 작은 굵은 산세리프 문자로 씁니다,"
-    # "하지만 여전히 멀리서도 분명히 읽을 수 있습니다."
-    # f"아래쪽 줄에는 제목 바로 아래에 \\"{location_text}\\"라고 맨 위 줄보다 약간 작은 크기로 적습니다."
-    # "세 줄 모두 모든 배경 요소 위에 명확하게 가장 앞쪽 시각적 층에 그려야 합니다,"
-    # "장면에서 등장인물, 객체, 효과는 글자의 어떤 부분도 겹치거나 덮거나 자를 수 없습니다."
-    # "이 세 줄의 텍스트를 각각 한 번씩 정확하게 그리세요. 두 번째 복사본, 그림자 복사본, 반사를 그리지 마세요,"
-    # "이미지의 다른 부분에 있는 이 텍스트의 mirrored 사본, 개요 전용 사본, 흐릿한 사본 또는 부분 사본"
-    # 지상, 하늘, 물, 건물, 장식 또는 인터페이스 요소를 포함하여
-    # "다른 텍스트는 전혀 추가하지 마세요: 단어, 라벨, 날짜, 숫자, 로고, 워터마크 또는 UI 요소는 추가하지 마세요."
-    # "이 세 줄을 beyond."
-    # "글을 배너, 간판, 패널, 상자, 프레임, 리본 또는 물리적 보드에 배치하지 마십시오;"
-    # 배경 바로 위에 깨끗한 떠다니는 글자만 그립니다
-    # "이 프롬프트의 따옴표는 지시용이므로 최종 이미지에 따옴표를 그리지 마세요."
-    
     return prompt.strip()
+
 
 
 # -------------------------------------------------------------
@@ -583,7 +554,7 @@ def _save_image_from_file_output(
     if hasattr(file_output, "read") and callable(file_output.read):
         data: bytes = file_output.read()
     elif isinstance(url, str):
-        resp = requests.get(url, timeout=60)
+        resp = requests.get(url, timeout=120)
         resp.raise_for_status()
         data = resp.content
     else:
@@ -824,10 +795,11 @@ def main() -> None:
 
     # 로컬 포스터 파일 경로 (PROJECT_ROOT/app/data/banner/...)
     # 필요하면 아래 한 줄을 str(DATA_ROOT / "banner" / "busan.png") 로 바꿔도 됨
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\goheung.png"
-    festival_name_ko = "제 15회 고흥 우주항공 축제"
-    festival_period_ko = "2025.05.03 ~ 2025.05.06"
-    festival_location_ko = "고흥군 봉래면 나로우주센터 일원"
+
+    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\arco.png"
+    festival_name_ko = "예술 인형 축제"
+    festival_period_ko = "2025.11.04 ~ 2025.11.09"
+    festival_location_ko = "아르코꿈밭극장, 텃밭스튜디오"
 
     # 2) 혹시라도 비어 있으면 바로 알려주기
     missing = []

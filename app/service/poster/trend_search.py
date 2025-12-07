@@ -85,7 +85,7 @@ def get_naver_datalab_trend(keyword):
     }
 
     try:
-        response = requests.post(url, headers=headers, data=json.dumps(body), timeout=10)
+        response = requests.post(url, headers=headers, data=json.dumps(body), timeout=120)
         response.raise_for_status()
         data = response.json()
         print(f"    - Naver 데이터랩 분석 완료.")
@@ -116,7 +116,7 @@ def get_naver_search_content(query, display=5):
             "X-Naver-Client-Id": NAVER_CLIENT_ID,
             "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
         }
-        response = requests.get(blog_url, headers=headers, timeout=5)
+        response = requests.get(blog_url, headers=headers, timeout=120)
         response.raise_for_status()
         for item in response.json().get("items", []):
             results.append({
@@ -135,7 +135,7 @@ def get_naver_search_content(query, display=5):
             "X-Naver-Client-Id": NAVER_CLIENT_ID,
             "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
         }
-        response = requests.get(news_url, headers=headers, timeout=5)
+        response = requests.get(news_url, headers=headers, timeout=120)
         response.raise_for_status()
         for item in response.json().get("items", []):
             results.append({

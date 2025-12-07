@@ -15,7 +15,7 @@ from langchain_openai import ChatOpenAI
 from langchain_community.tools import TavilySearchResults
 from pydantic import BaseModel, Field
 import requests
-from serpapi import google_search
+from serpapi import GoogleSearch
 # ============================================
 # 1) 경로 설정 (절대경로, 어디서 실행해도 안전)
 # ============================================
@@ -221,7 +221,7 @@ def serpapi_find_image(trend: str) -> str | None:
             "api_key": os.getenv("SERPAPI_API_KEY")
         }
 
-        search = google_search(params)
+        search = GoogleSearch(params)
         results = search.get_dict()
 
         # 이미지 리스트 가져오기
@@ -260,7 +260,7 @@ def download_image_fixed(url: str, idx: int) -> str | None:
 
     try:
         # 2) 첫 번째 시도 (기본 요청)
-        resp = requests.get(url, headers=HEADERS, timeout=12)
+        resp = requests.get(url, headers=HEADERS, timeout=120)
         if resp.status_code == 200:
             with open(file_path, "wb") as f:
                 f.write(resp.content)
@@ -272,7 +272,7 @@ def download_image_fixed(url: str, idx: int) -> str | None:
 
     # 3) fallback: SSL 검증 끄고 재시도
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=12, verify=False)
+        resp = requests.get(url, headers=HEADERS, timeout=120, verify=False)
         if resp.status_code == 200:
             with open(file_path, "wb") as f:
                 f.write(resp.content)
