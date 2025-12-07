@@ -1,4 +1,4 @@
-# app/service/leaflet/make_leaflet_replicate.py
+# app/service/poster_cardnews/make_poster_cardnews_replicate.py
 
 import os
 import json
@@ -38,28 +38,28 @@ openai_client = OpenAI()   # OPENAI_API_KEY 는 환경변수로 자동 인식됨
 # LLM 시스템 프롬프트: 한글 텍스트까지 포함된 4컷 리플렛
 # --------------------------------------------------
 
-LEAFLET_SYSTEM_PROMPT = """
-You are a professional festival leaflet prompt designer.
+POSTER_CARDNEWS_SYSTEM_PROMPT = """
+You are a professional festival poster_cardnews prompt designer.
 
 ## GOAL
 
 Your job is to use:
 - IMAGE 1: a FESTIVAL POSTER style reference,
-- IMAGE 2: a LEAFLET / TRIFOLD layout reference,
+- IMAGE 2: a POSTER_CARDNEWS / TRIFOLD layout reference,
 - and FESTIVAL METADATA in JSON (Korean name, period, location, concept, program list),
 
 to generate ONE detailed English prompt for the model
 `google/nano-banana-pro` on Replicate that will:
 
 - keep the illustration STYLE, atmosphere, and color feeling of IMAGE 1,
-- adopt the overall multi-panel LEAFLET structure of IMAGE 2
+- adopt the overall multi-panel POSTER_CARDNEWS structure of IMAGE 2
   (like a real printed Korean festival brochure),
-- and render a fully finished leaflet image with **real, readable Korean text**
+- and render a fully finished poster_cardnews image with **real, readable Korean text**
   for the festival title, period, location, programs, schedule, and basic guide info.
 
-This leaflet will be used as-is. There will be NO manual text editing afterwards,
+This poster_cardnews will be used as-is. There will be NO manual text editing afterwards,
 so the Korean text must be sharp, accurate, and clearly legible.
-The composition must feel like an actual local government festival leaflet,
+The composition must feel like an actual local government festival poster_cardnews,
 not like a simple poster collage.
 
 ---
@@ -70,21 +70,21 @@ not like a simple poster collage.
 
    - The image model receives TWO separate reference images:
      - First reference image (index 0): festival poster style reference (Image 1).
-     - Second reference image (index 1): leaflet layout / trifold reference (Image 2).
+     - Second reference image (index 1): poster_cardnews layout / trifold reference (Image 2).
 
    - In your prompt, you MUST explicitly describe:
      - "the first reference image" = style, color palette, overall festive mood.
      - "the second reference image" = layout, multi-panel brochure structure.
 
-   - The generated leaflet must be a **single 16:9 canvas**,
+   - The generated poster_cardnews must be a **single 1:1 canvas**,
      NOT a collage of multiple separate images.
 
-2. Overall layout: four-panel leaflet in 16:9
+2. Overall layout: four-panel poster_cardnews in 1:1:
 
-   - Design the leaflet as **four vertical panels** inside a 16:9 horizontal canvas.
+   - Design the poster_cardnews as **four vertical panels** inside a 1:1 horizontal canvas.
    - Each panel has equal width and the same height.
    - Use thin but clear vertical separators between panels,
-     similar to a folded paper leaflet.
+     similar to a folded paper poster_cardnews.
    - Keep a small outer margin so it looks like a printed brochure,
      not edge-to-edge bleed.
 
@@ -107,7 +107,7 @@ not like a simple poster collage.
    - You may add 1–3 additional realistic program items in Korean
      that match the festival concept (e.g. Santa parade, night view zone,
      photo zone, family experience, etc.).
-   - Use bullet-style layout or small icons to make it look like a real leaflet.
+   - Use bullet-style layout or small icons to make it look like a real poster_cardnews.
 
    **Panel 3 – 일정표 및 이벤트 안내**
 
@@ -118,7 +118,7 @@ not like a simple poster collage.
    - It does not need to be historically accurate; you may create a realistic schedule
      based on `program_name` and the concept.
    - You may add a small boxed area for “이벤트 안내” or “할인 정보” in Korean,
-     similar to the third sample leaflet:
+     similar to the third sample poster_cardnews:
      - e.g. shuttle, discount for local shops, special night event, etc.
 
    **Panel 4 (right) – 장소 · 교통 · 안내 정보**
@@ -182,14 +182,14 @@ Keep tables, map, and program sections **organized and readable**, not cluttered
 
 ## VISUAL & TECHNICAL REQUIREMENTS
 
-- Aspect ratio: exactly 16:9, horizontal.
+- Aspect ratio: exactly 1:1, horizontal.
 - Four vertical panels with clear separators and small outer margins.
 - Style: follow the illustration style and color palette of the first reference image
   (warm winter night, festive lights, family-friendly).
 - Layout: follow the structure of the second reference image and
-  typical Korean festival brochures (like a tourism office leaflet),
+  typical Korean festival brochures (like a tourism office poster_cardnews),
   but do not copy any single reference exactly.
-- The overall design must look like a professionally printed leaflet:
+- The overall design must look like a professionally printed poster_cardnews:
   balanced typography, aligned columns, tables, and information blocks.
 
 ---
@@ -199,13 +199,13 @@ Keep tables, map, and program sections **organized and readable**, not cluttered
 You must return ONLY JSON of the following form:
 
 {
-  "leaflet_prompt": "<full detailed English prompt for google/nano-banana-pro on Replicate>"
+  "poster_cardnews_prompt": "<full detailed English prompt for google/nano-banana-pro on Replicate>"
 }
 
 - Do NOT include Korean in the JSON keys.
-- The `leaflet_prompt` must explicitly mention:
+- The `poster_cardnews_prompt` must explicitly mention:
   - that the first reference image is for style and festive mood,
-  - that the second reference image is for multi-panel leaflet layout,
+  - that the second reference image is for multi-panel poster_cardnews layout,
   - that the layout uses four vertical panels with the specific roles above,
   - that the model must render **real Korean text** using the given strings
     for title, period, location, and program names,
@@ -225,9 +225,9 @@ def _resolve_front_asset(path_or_url: str, project_id: str | int) -> Path:
     """
     # http(s) → 임시 다운로드
     if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
-        tmp_dir = Path("generated_leaflet_refs")
+        tmp_dir = Path("generated_poster_cardnews_refs")
         tmp_dir.mkdir(exist_ok=True)
-        tmp_path = tmp_dir / f"leaflet_ref_{project_id}.png"
+        tmp_path = tmp_dir / f"poster_cardnews_ref_{project_id}.png"
 
         print(f"🌐 원격 이미지 다운로드: {path_or_url}")
         resp = requests.get(path_or_url, stream=True)
@@ -248,7 +248,7 @@ def _resolve_front_asset(path_or_url: str, project_id: str | int) -> Path:
 # 1단계: LLM으로 Nano Banana용 프롬프트 생성
 # --------------------------------------------------
 
-def generate_leaflet_prompt_from_metadata(
+def generate_poster_cardnews_prompt_from_metadata(
     *,
     poster_style_path: Path,
     layout_ref_path: Path,
@@ -281,15 +281,15 @@ def generate_leaflet_prompt_from_metadata(
         "You will design a **single, very detailed prompt** for `google/nano-banana-pro` on Replicate.\n"
         "The image model will receive TWO reference images in the `image_input` array:\n"
         "- index 0 (first reference image): the festival poster style reference (Image 1).\n"
-        "- index 1 (second reference image): the leaflet / brochure layout reference (Image 2).\n\n"
-        "The final output must look like a **real Korean festival leaflet** printed by a local government,\n"
-        "with four vertical panels inside a 16:9 canvas.\n\n"
+        "- index 1 (second reference image): the poster_cardnews / brochure layout reference (Image 2).\n\n"
+        "The final output must look like a **real Korean festival poster_cardnews** printed by a local government,\n"
+        "with four vertical panels inside a 1:1 canvas.\n\n"
         "In your prompt, clearly instruct the model to:\n"
         "- follow the illustration style, colors, and mood of the first reference image,\n"
-        "- follow the multi-panel leaflet layout structure of the second reference image,\n"
+        "- follow the multi-panel poster_cardnews layout structure of the second reference image,\n"
         "- organize information into 4 panels: cover, programs, schedule, and map/transport guide,\n"
-        "- fill the leaflet with natural, readable Korean text based on the metadata.\n\n"
-        "The leaflet must feel dense with information but still clean and well-organized,\n"
+        "- fill the poster_cardnews with natural, readable Korean text based on the metadata.\n\n"
+        "The poster_cardnews must feel dense with information but still clean and well-organized,\n"
         "similar to an official tourism brochure, not like a simple poster.\n\n"
         "Festival metadata JSON:\n"
         f"{meta_json}\n\n"
@@ -303,29 +303,29 @@ def generate_leaflet_prompt_from_metadata(
         model="gpt-4o-mini",
         response_format={"type": "json_object"},
         messages=[
-            {"role": "system", "content": LEAFLET_SYSTEM_PROMPT},
+            {"role": "system", "content": POSTER_CARDNEWS_SYSTEM_PROMPT},
             {"role": "user", "content": user_text},
         ],
     )
 
     data = json.loads(resp.choices[0].message.content)
-    leaflet_prompt: str = data.get("leaflet_prompt", "")
-    if not leaflet_prompt:
-        raise ValueError("LLM이 leaflet_prompt 를 생성하지 못했습니다.")
-    print("🧠 LLM leaflet_prompt 생성 완료.")
-    return leaflet_prompt
+    poster_cardnews_prompt: str = data.get("poster_cardnews_prompt", "")
+    if not poster_cardnews_prompt:
+        raise ValueError("LLM이 poster_cardnews_prompt 를 생성하지 못했습니다.")
+    print("🧠 LLM poster_cardnews_prompt 생성 완료.")
+    return poster_cardnews_prompt
 
 
 # --------------------------------------------------
 # 2단계: Replicate + google/nano-banana-pro 호출
 # --------------------------------------------------
 
-def generate_leaflet_with_replicate(
+def generate_poster_cardnews_with_replicate(
     *,
-    leaflet_prompt: str,
+    poster_cardnews_prompt: str,
     poster_path: Path,
     layout_path: Path,
-    download_name: str = "leaflet_nano_banana.png",
+    download_name: str = "poster_cardnews_nano_banana.png",
 ) -> Path:
     """
     Replicate 의 google/nano-banana-pro 모델을 호출해서
@@ -335,9 +335,9 @@ def generate_leaflet_with_replicate(
 
     print("\n--- Nano Banana Pro (Replicate) 리플렛 생성 시작 ---")
     print("모델: google/nano-banana-pro")
-    print("요청 prompt 일부:", leaflet_prompt[:120], "...")
+    print("요청 prompt 일부:", poster_cardnews_prompt[:120], "...")
 
-    output_dir = _Path("generated_leaflets_replicate")
+    output_dir = _Path("generated_poster_cardnewss_replicate")
     output_dir.mkdir(exist_ok=True)
     output_path = output_dir / download_name
 
@@ -346,10 +346,10 @@ def generate_leaflet_with_replicate(
         output = replicate.run(
             "google/nano-banana-pro",
             input={
-                "prompt": leaflet_prompt,
+                "prompt": poster_cardnews_prompt,
                 "image_input": [poster_file, layout_file],
                 # 필요하면 여기서 aspect_ratio / resolution 등 옵션 추가
-                # "aspect_ratio": "16:9",
+                # "aspect_ratio": "1:1",
                 # "resolution": "2K",
             },
         )
@@ -366,7 +366,7 @@ def generate_leaflet_with_replicate(
 # 3단계: ACC 파이프라인 엔트리
 # --------------------------------------------------
 
-def run_leaflet_to_editor(
+def run_poster_cardnews_to_editor(
     *,
     festival_name_ko: str,
     festival_period_ko: str,
@@ -383,7 +383,7 @@ def run_leaflet_to_editor(
     1) poster_image_url, layout_ref_image_url → 실제 파일 경로
     2) LLM 으로 Nano Banana Pro용 prompt 생성
     3) Replicate 호출 → 리플렛 이미지 생성
-    4) FRONT_PROJECT_ROOT/public/data/promotion/M000001/{pNo}/image/leaflet_nano.png 저장
+    4) FRONT_PROJECT_ROOT/public/data/promotion/M000001/{pNo}/image/poster_cardnews_nano.png 저장
     5) DB 저장용 dict 반환
     """
     pNo = str(project_id)
@@ -398,7 +398,7 @@ def run_leaflet_to_editor(
         raise FileNotFoundError(f"레이아웃 참고 이미지가 존재하지 않습니다: {layout_path}")
 
     # 2. LLM 프롬프트 생성
-    leaflet_prompt = generate_leaflet_prompt_from_metadata(
+    poster_cardnews_prompt = generate_poster_cardnews_prompt_from_metadata(
         poster_style_path=poster_path,
         layout_ref_path=layout_path,
         festival_name_ko=festival_name_ko,
@@ -409,33 +409,33 @@ def run_leaflet_to_editor(
     )
 
     # 3. Nano Banana Pro 호출
-    nano_output_path = generate_leaflet_with_replicate(
-        leaflet_prompt=leaflet_prompt,
+    nano_output_path = generate_poster_cardnews_with_replicate(
+        poster_cardnews_prompt=poster_cardnews_prompt,
         poster_path=poster_path,
         layout_path=layout_path,
-        download_name=f"leaflet_{pNo}.png",
+        download_name=f"poster_cardnews_{pNo}.png",
     )
 
     # 4. FRONT public/data/... 로 이동
     front_root = Path(FRONT_PROJECT_ROOT)
     public_root = front_root / "public"
-    rel_dir = Path("data") / "promotion" / PROMOTION_CODE / pNo / "leaflet"
+    rel_dir = Path("data") / "promotion" / PROMOTION_CODE / pNo / "poster_cardnews"
     target_dir = public_root / rel_dir
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    target_path = target_dir / "leaflet_nano.png"
+    target_path = target_dir / "poster_cardnews_nano.png"
     shutil.move(str(nano_output_path), target_path)
     print(f"✅ 최종 리플렛 이미지 저장: {target_path}")
 
     db_rel_path = (
-        Path("data") / "promotion" / PROMOTION_CODE / pNo / "leaflet" / "leaflet_nano.png"
+        Path("data") / "promotion" / PROMOTION_CODE / pNo / "poster_cardnews" / "poster_cardnews_nano.png"
     ).as_posix()
 
     result: Dict[str, Any] = {
-        "db_file_type": "leaflet",
+        "db_file_type": "poster_cardnews",
         "type": "image",
         "db_file_path": db_rel_path,
-        "type_ko": "리플렛",
+        "type_ko": "카든뉴스",
     }
     return result
 
@@ -453,10 +453,10 @@ if __name__ == "__main__":
     """
 
     test_poster_image_url = "data/promotion/M000001/25/poster/poster_1764735670_2.png"
-    test_layout_ref_url = "data/promotion/M000001/25/poster/sample.png"
+    test_layout_ref_url = "data/promotion/M000001/25/poster/card.png"
 
     try:
-        result = run_leaflet_to_editor(
+        result = run_poster_cardnews_to_editor(
             festival_name_ko="제7회 담양 산타 축제",
             festival_period_ko="2025.12.23 ~ 2025.12.24",
             festival_location_ko="담양 메타랜드 일원",
