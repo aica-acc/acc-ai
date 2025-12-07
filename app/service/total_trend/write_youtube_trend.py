@@ -15,7 +15,7 @@ from langchain_openai import ChatOpenAI
 from langchain_community.tools import TavilySearchResults
 from pydantic import BaseModel, Field
 import requests
-from serpapi import google_search
+from serpapi import GoogleSearch
 # ============================================
 # 1) 경로 설정 (절대경로, 어디서 실행해도 안전)
 # ============================================
@@ -221,7 +221,7 @@ def serpapi_find_image(trend: str) -> str | None:
             "api_key": os.getenv("SERPAPI_API_KEY")
         }
 
-        search = google_search(params)
+        search = GoogleSearch(params)
         results = search.get_dict()
 
         # 이미지 리스트 가져오기
