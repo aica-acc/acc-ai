@@ -61,6 +61,7 @@ openai_client = OpenAI()
 
 #이건 바꿔야함 
 test_layout_image_url = "data/promotion/M000001/25/poster/good_2.jpg"
+card_layout_image_url = "data/promotion/M000001/25/poster/card.png"
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 # 환경설정 모델들
 VEO_MODEL = "veo-3.1-generate-preview"
@@ -141,7 +142,7 @@ from app.service.video.make_mascot_video import run_mascot_video_to_editor
 from app.service.goods.make_goods_emoticon import run_goods_emoticon_to_editor
 from app.service.goods.make_goods_key_ring import run_goods_key_ring_to_editor
 from app.service.goods.make_goods_sticker import run_goods_sticker_to_editor
-
+from app.service.cardnews.make_poster_cardnews import run_poster_cardnews_to_editor
 # # === ETC 비디오 (예시 import 경로) ===
 from app.service.video.make_etc_video import run_etc_video_to_editor
 
@@ -233,7 +234,7 @@ TYPE_PIPELINE_MAP = {
     "logo_typography": run_logo_typography_to_editor,
 
     # Poster 파생
-    # "poster_cardnews": run_poster_cardnews_to_editor,
+    "poster_cardnews": run_poster_cardnews_to_editor,
     "leaflet": run_leaflet_to_editor,
     "poster_video": run_poster_video_to_editor,
     # "live_poster": run_live_poster_to_editor,
@@ -443,8 +444,11 @@ def build_editor_templates(payload: EditorBuildRequest):
                     festival_period_ko=festival_period_ko,
                     festival_location_ko=festival_location_ko,
                     program_name=program_name,
-                    concept_description=concept_description
+                    concept_description=concept_description,
+                    poster_image_url=poster_image_url,
+                    layout_ref_image_url=card_layout_image_url
                 )
+
 
             # --- ETC VIDEO ---
             elif t in ETC_VIDEO_TYPES:
