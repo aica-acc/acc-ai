@@ -3,9 +3,9 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any
 
-EDITOR_ROOT_DIR = r"C:\final_project\ACC\acc-ai\app\data\editor"
+from app.core.config import EDITOR_ROOT_DIR as _EDITOR_ROOT, STATIC_BASE_URL
+EDITOR_ROOT_DIR = str(_EDITOR_ROOT)
 LAYOUT_TEMPLATES_DIR = Path(EDITOR_ROOT_DIR) / "layout_templates"
-STATIC_BASE_URL = "http://127.0.0.1:5000/static/editor"
 
 
 def build_total_layout(

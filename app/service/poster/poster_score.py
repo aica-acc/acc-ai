@@ -25,10 +25,10 @@ from dotenv import load_dotenv
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-ROOT_DIR = Path(r"C:\final_project\ACC\acc-ai\홍보물") 
+ROOT_DIR = Path(os.getenv("POSTER_SOURCE_DIR") or Path(__file__).resolve().parents[3] / "홍보물")
 YEAR = 2025
 REGIONS = ["경남", "경북", "대구","대전", "부산", "울산", "인천", "제주", "충남", "충북"]
-OUTPUT_CSV = Path(r"C:\final_project\ACC\acc-ai\app\service\poster\poster_scores_korean_progress.csv") #
+OUTPUT_CSV = Path(__file__).resolve().parent / "poster_scores_korean_progress.csv"
 VALID_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 MAX_WORKERS = 8
 LOCK = threading.Lock()

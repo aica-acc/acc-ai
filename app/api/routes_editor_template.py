@@ -87,7 +87,7 @@ EDITOR_ROOT_DIR = PROJECT_ROOT / "app" / "data" / "editor"
 LAYOUT_TEMPLATES_DIR = EDITOR_ROOT_DIR / "layout_templates"
 
 # Static URL prefix
-STATIC_BASE_URL = os.getenv("STATIC_BASE_URL", "http://127.0.0.1:5000/static/editor")
+from app.core.config import STATIC_BASE_URL  # 환경변수 STATIC_BASE_URL / AI_PUBLIC_BASE_URL 로 변경 가능
 
 logger = logging.getLogger(__name__)
 

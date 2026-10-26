@@ -544,11 +544,11 @@ def main() -> None:
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
     p_no = 11
 
-    mascot_image_url = r"C:\final_project\ACC\acc-ai\app\data\mascot\panda.png"
+    mascot_image_url = str(Path(__file__).resolve().parents[2] / "data" / "mascot" / "panda.png")
     festival_name_ko = "2025 담양산타축제"
     festival_period_ko = "2024.12.24 ~ 2024.12.25"
     festival_location_ko = "담양시 담양메타랜드 일원"
-    mascot_image_url = r"C:\final_project\ACC\acc-ai\app\data\mascot\kimcheon.png"
+    mascot_image_url = str(Path(__file__).resolve().parents[2] / "data" / "mascot" / "kimcheon.png")
     festival_name_ko = "2025 김천김밥축제"
     festival_period_ko = "2024.10.25 ~ 2024.10.26"
     festival_location_ko = "김천시 직지문화공원 및 사명대사공원 일원"

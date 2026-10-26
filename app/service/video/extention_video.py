@@ -288,7 +288,7 @@ def concatenate_videos(input_paths: list[Path], output_filename: str):
 if __name__ == "__main__":
     
     # 🚨 주의: 아래 경로들을 실제 파일 경로로 수정하세요. (파일명 포함!)
-    BASE_DIR = r'C:\final_project\ACC\acc-ai\app\service\video\test_images'
+    BASE_DIR = str(Path(__file__).resolve().parent / 'test_images')
     START_IMAGE_PATH = str(Path(BASE_DIR) / "test2.png") 
     END_IMAGE_PATH = str(Path(BASE_DIR) / "end_frame.jpg") 
     

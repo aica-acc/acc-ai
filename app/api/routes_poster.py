@@ -17,7 +17,8 @@ except ImportError as e:
     exit()
 
 router = APIRouter(prefix="", tags=["Project Poster Generation"])
-SAVE_DIR = r"C:\final_project\ACC\acc-ai\promotion\poster"
+from app.core.config import PROMOTION_DIR
+SAVE_DIR = str(PROMOTION_DIR / "poster")
 
 if not os.path.exists(SAVE_DIR):
     os.makedirs(SAVE_DIR)

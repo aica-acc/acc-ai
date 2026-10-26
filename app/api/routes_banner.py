@@ -44,11 +44,13 @@ from app.service.banner.make_banner_from_prompt.service_make_banner_from_prompt 
     make_banner_from_prompt_service,
 )
 
+from app.core.config import BANNER_SAVE_DIR as _CFG_BANNER_SAVE_DIR
+
 router = APIRouter(prefix="/banner", tags=["Banner"])
 
 # -------------------- 공용 유틸 --------------------
 def _default_save_dir() -> Path:
-    return Path(os.getenv("BANNER_SAVE_DIR", "C:/final_project/ACC/assets/banners"))
+    return Path(os.getenv("BANNER_SAVE_DIR") or _CFG_BANNER_SAVE_DIR)
 
 def _json_ok(payload: dict) -> JSONResponse:
     return JSONResponse(

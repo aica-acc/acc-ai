@@ -23,7 +23,8 @@ CLIPDROP_API_KEY = os.getenv("CLIPDROP_API_KEY")
 
 # 🔧 경로 기본값
 # app/data/editor/<run_id>/ 구조 기준
-EDITOR_ROOT_DIR = r"C:\final_project\ACC\acc-ai\app\data\editor"
+from app.core.config import EDITOR_ROOT_DIR as _EDITOR_ROOT
+EDITOR_ROOT_DIR = str(_EDITOR_ROOT)
 OUTPUT_ROOT_DIR = r"./output_editor"  # 지금은 안 쓰지만, 혹시 몰라서 남겨둠
 
 

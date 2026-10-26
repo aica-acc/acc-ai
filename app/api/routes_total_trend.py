@@ -1,5 +1,6 @@
 # app/router/trend_total_router.py
 
+from app.core.config import TREND_IMAGE_BASE_URL
 import os
 import json
 from fastapi import APIRouter, Form, HTTPException
@@ -22,7 +23,7 @@ async def analyze_total_trend(
     
     def convert_local_path_to_url(path: str):
         filename = os.path.basename(path)
-        return f"http://127.0.0.1:5000/static/total_trend_images/{filename}"
+        return f"{TREND_IMAGE_BASE_URL}/{filename}"
 
     try:
         # ================================

@@ -425,7 +425,7 @@ def main() -> None:
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
     run_id = 10  # 에디터 실행 번호 (폴더 이름에도 사용됨)
 
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\arco.png"
+    poster_image_url = str(Path(__file__).resolve().parents[2] / "data" / "banner" / "arco.png")
     festival_name_ko = "예술 인형 축제"
     festival_period_ko = "2025.11.04 ~ 2025.11.09"
     festival_location_ko = "아르코꿈밭극장, 텃밭스튜디오"

@@ -1,3 +1,4 @@
+from app.core.config import TREND_IMAGE_BASE_URL
 import os
 from fastapi import APIRouter, Form, HTTPException
 
@@ -49,7 +50,7 @@ async def analyze_region_trend(
     def convert_local_path_to_url(path: str):
         filename = os.path.basename(path)
         # 실제 배포 환경에 맞춰 도메인/포트 수정 필요 (현재 5000번 가정)
-        return f"http://127.0.0.1:5000/static/total_trend_images/{filename}"
+        return f"{TREND_IMAGE_BASE_URL}/{filename}"
 
     try:
         print(f"🚀 [Region Trend] 분석 시작: {host} (축제: {keyword})")
