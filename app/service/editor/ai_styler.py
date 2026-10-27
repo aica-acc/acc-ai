@@ -19,7 +19,7 @@ else:
     PROJECT_ROOT = None
 
 # Static URL prefix
-STATIC_BASE_URL = os.getenv("STATIC_BASE_URL", "http://127.0.0.1:5000/static/editor")
+from app.core.config import STATIC_BASE_URL  # 환경변수 STATIC_BASE_URL / AI_PUBLIC_BASE_URL 로 변경 가능
 
 
 client = OpenAI()

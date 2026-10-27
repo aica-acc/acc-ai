@@ -21,6 +21,7 @@ class MascotImageState(TypedDict, total=False):
     translated_prompt: str
     final_prompt: str
     model_name: str
+    forced_model: Optional[str]  # 재시도 시 자동 선택 대신 쓸 모델
     output_path: str
     width: int
     height: int
@@ -136,7 +137,7 @@ def node_model_select(state: MascotImageState):
     print("[ImageGraph] ▷ node_model_select 진입")
     print(f"[ImageGraph]   style_name = {state['style_name']!r}")
 
-    model = semantic_choose_model(
+    model = state.get("forced_model") or semantic_choose_model(
         style_sentence=state["style_name"],
         translated_prompt=state.get("translated_prompt", "")
     )
@@ -266,7 +267,7 @@ def node_save_and_return(state: MascotImageState):
 # 7. 외부에서 호출하는 함수 (엔트리 포인트)
 # ============================================
 
-def run_mascot_image_pipeline(style_name: str, raw_prompt: str, output_path: str):
+def run_mascot_image_pipeline(style_name: str, raw_prompt: str, output_path: str, model: Optional[str] = None):
     print("===================================================")
     print("[run_mascot_image_pipeline] 호출")
     print(f"[run_mascot_image_pipeline] style_name  = {style_name}")
@@ -279,6 +280,7 @@ def run_mascot_image_pipeline(style_name: str, raw_prompt: str, output_path: str
         "translated_prompt": "",
         "final_prompt": "",
         "model_name": "",
+        "forced_model": model,
         "output_path": output_path,
         "width": 1024,
         "height": 1024,

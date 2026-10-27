@@ -87,7 +87,7 @@ EDITOR_ROOT_DIR = PROJECT_ROOT / "app" / "data" / "editor"
 LAYOUT_TEMPLATES_DIR = EDITOR_ROOT_DIR / "layout_templates"
 
 # Static URL prefix
-STATIC_BASE_URL = os.getenv("STATIC_BASE_URL", "http://127.0.0.1:5000/static/editor")
+from app.core.config import STATIC_BASE_URL  # 환경변수 STATIC_BASE_URL / AI_PUBLIC_BASE_URL 로 변경 가능
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +145,7 @@ from app.service.goods.make_goods_sticker import run_goods_sticker_to_editor
 from app.service.cardnews.make_poster_cardnews import run_poster_cardnews_to_editor
 # # === ETC 비디오 (예시 import 경로) ===
 from app.service.video.make_etc_video import run_etc_video_to_editor
+from app.service.editor import build_progress, derivative_cache
 
 # === news는 pass 예정 ===
 # from app.service.etc.make_news import run_news_to_editor
@@ -283,6 +284,46 @@ def _local_path_to_static_url(path) -> str:
     rel = path.relative_to(root)
     return f"{STATIC_BASE_URL}/{rel.as_posix()}"
 
+def _normalize_extra_item(item: dict) -> dict:
+    """
+    파생물(로고·표지판·굿즈·카드뉴스 등) 항목을 에디터가 바로 그릴 수 있게 정리한다.
+      - 이미지 url 을 브라우저용 웹 경로(/data/promotion/...)로 바꾼다 (컨테이너 파일 경로는 브라우저가 못 연다)
+      - 캔버스 크기를 이미지 실제 픽셀 크기로 채운다 (없으면 에디터가 800x450 가로 캔버스에 작게 그렸다)
+      - 확장자와 실제 형식이 다르면(.png 인데 JPEG) 진짜 PNG 로 다시 저장한다
+    """
+    canvas_data = item.setdefault("canvasData", {})
+    for obj in canvas_data.get("objects") or []:
+        url = obj.get("url")
+        if obj.get("type") != "image" or not url:
+            continue
+        normalized = url.replace("\\", "/")
+        if "/public/data/" in normalized:
+            rel = normalized.split("/public/", 1)[1]           # data/promotion/...
+        elif normalized.lstrip("/").startswith("data/"):
+            rel = normalized.lstrip("/")
+        else:
+            continue
+        local = Path(normalized) if Path(normalized).is_absolute() and Path(normalized).exists()             else Path(FRONT_PROJECT_ROOT or "") / "public" / rel
+        obj["url"] = "/" + rel
+        if not local.exists():
+            continue
+        try:
+            with Image.open(local) as im:
+                im.load()
+                w, h = im.size
+                if local.suffix.lower() == ".png" and im.format != "PNG":
+                    logger.info("[editor.build] %s 실제 형식 %s → PNG 로 다시 저장", local.name, im.format)
+                    im.save(local, "PNG")
+        except Exception as e:
+            logger.warning("[editor.build] 이미지 정보를 읽지 못함: %s (%s)", local, e)
+            continue
+        canvas_data.setdefault("width", w)
+        canvas_data.setdefault("height", h)
+        for k, v in (("left", 0), ("top", 0), ("scaleX", 1), ("scaleY", 1)):
+            obj.setdefault(k, v)
+    return item
+
+
 def append_extra_items_to_total(total_json_path: str, extra_items: List[dict]) -> str:
     """
     build_total_layout(...) 이 리턴한 total.json 경로에
@@ -299,6 +340,7 @@ def append_extra_items_to_total(total_json_path: str, extra_items: List[dict]) -
         total_data = json.load(f)
 
     logger.info("[editor.build] total.json root type=%s", type(total_data).__name__)
+    extra_items = [_normalize_extra_item(it) for it in extra_items]
 
     # 1) 루트가 리스트인 경우: 그냥 뒤에 붙이기
     if isinstance(total_data, list):
@@ -355,6 +397,9 @@ def build_editor_templates(payload: EditorBuildRequest):
         t_list = payload_data.types
 
         logger.info(f"[editor.build] types={t_list}")
+        build_progress.start(
+            payload.pNo, [t for t in t_list if t != "news" and t in TYPE_PIPELINE_MAP]
+        )
 
         # 2) 타입별 파이프라인 실행
         for t in t_list:
@@ -368,98 +413,119 @@ def build_editor_templates(payload: EditorBuildRequest):
                 logger.warning(f"[editor.build] unknown type {t}")
                 continue
 
+            # 같은 베이스로 이미 만든 유형은 다시 생성하지 않는다 (derivative_cache)
+            base_url = mascot_image_url if t in (MSHS_TYPES | MASCOT_VIDEO_TYPES) else poster_image_url
+            cached = derivative_cache.find(payload.pNo, t, base_url)
             result = None
+            if cached:
+                logger.info(f"[editor.build] {t}: 같은 베이스로 만든 결과 재사용")
+                if t in POHS_TYPES:
+                    derivative_cache.reuse_pohs(cached, t, run_id)
+                else:
+                    result = cached.get("result")
+                build_progress.item_done(payload.pNo, t, reused=True)
+            else:
+                build_progress.item_start(payload.pNo, t)
+                try:
 
-            # --- POHS: 수정 가능한 6종 ---
-            if t in POHS_TYPES:
-                result = fn(
-                    run_id= run_id,
-                    poster_image_url=poster_image_url,
-                    festival_name_ko=festival_name_ko,
-                    festival_period_ko=festival_period_ko,
-                    festival_location_ko=festival_location_ko
-                )
+                    # --- POHS: 수정 가능한 6종 ---
+                    if t in POHS_TYPES:
+                        result = fn(
+                            run_id= run_id,
+                            poster_image_url=poster_image_url,
+                            festival_name_ko=festival_name_ko,
+                            festival_period_ko=festival_period_ko,
+                            festival_location_ko=festival_location_ko
+                        )
 
-            # --- LOGO (수정 불가능) ---
-            elif t in LOGO_TYPES:
-                result = fn(
-                    p_no=payload.pNo,
-                    poster_image_url=poster_image_url,
-                    festival_name_ko=festival_name_ko,
-                    festival_period_ko=festival_period_ko,
-                    festival_location_ko=festival_location_ko
-                )
+                    # --- LOGO (수정 불가능) ---
+                    elif t in LOGO_TYPES:
+                        result = fn(
+                            p_no=payload.pNo,
+                            poster_image_url=poster_image_url,
+                            festival_name_ko=festival_name_ko,
+                            festival_period_ko=festival_period_ko,
+                            festival_location_ko=festival_location_ko
+                        )
 
-            # --- Mascot 파생 ---
-            elif t in MSHS_TYPES:
-                result = fn(
-                    p_no=payload.pNo,
-                    mascot_image_url=mascot_image_url,
-                    festival_name_ko=festival_name_ko,
-                    festival_period_ko=festival_period_ko,
-                    festival_location_ko=festival_location_ko
-                )
+                    # --- Mascot 파생 ---
+                    elif t in MSHS_TYPES:
+                        result = fn(
+                            p_no=payload.pNo,
+                            mascot_image_url=mascot_image_url,
+                            festival_name_ko=festival_name_ko,
+                            festival_period_ko=festival_period_ko,
+                            festival_location_ko=festival_location_ko
+                        )
 
-            # --- LIVE ---
-            elif t in LEAFLET_TYPES:
-                result = fn(
-                    project_id=payload.pNo,
-                    festival_name_ko=festival_name_ko,
-                    festival_period_ko=festival_period_ko,
-                    festival_location_ko=festival_location_ko,
-                    program_name=program_name,
-                    concept_description=concept_description,
-                    poster_image_url=poster_image_url,
-                    layout_ref_image_url=test_layout_image_url
-                )
+                    # --- LIVE ---
+                    elif t in LEAFLET_TYPES:
+                        result = fn(
+                            project_id=payload.pNo,
+                            festival_name_ko=festival_name_ko,
+                            festival_period_ko=festival_period_ko,
+                            festival_location_ko=festival_location_ko,
+                            program_name=program_name,
+                            concept_description=concept_description,
+                            poster_image_url=poster_image_url,
+                            layout_ref_image_url=test_layout_image_url
+                        )
 
-            # --- Mascot Video ---
-            elif t in MASCOT_VIDEO_TYPES:
-                result = fn(
-                    project_id=payload.pNo,
-                    mascot_image_url=mascot_image_url,
-                    festival_name_ko=festival_name_ko,
-                    festival_period_ko=festival_period_ko,
-                    festival_location_ko=festival_location_ko,
-                    program_name=program_name,
-                    concept_description=concept_description
-                )
+                    # --- Mascot Video ---
+                    elif t in MASCOT_VIDEO_TYPES:
+                        result = fn(
+                            project_id=payload.pNo,
+                            mascot_image_url=mascot_image_url,
+                            festival_name_ko=festival_name_ko,
+                            festival_period_ko=festival_period_ko,
+                            festival_location_ko=festival_location_ko,
+                            program_name=program_name,
+                            concept_description=concept_description
+                        )
 
-            # --- Poster Video ---
-            elif t in POSTER_VIDEO_TYPES:
-                result = fn(
-                    project_id=payload.pNo,
-                    poster_image_url=poster_image_url,
-                    festival_name_ko=festival_name_ko,
-                    festival_period_ko=festival_period_ko,
-                    festival_location_ko=festival_location_ko,
-                    concept_description=concept_description
-                )
+                    # --- Poster Video ---
+                    elif t in POSTER_VIDEO_TYPES:
+                        result = fn(
+                            project_id=payload.pNo,
+                            poster_image_url=poster_image_url,
+                            festival_name_ko=festival_name_ko,
+                            festival_period_ko=festival_period_ko,
+                            festival_location_ko=festival_location_ko,
+                            concept_description=concept_description
+                        )
 
-            # --- Poster Cardnews ---
-            elif t in CARDNEWS_TYPES:
-                result = fn(
-                    project_id=payload.pNo,
-                    festival_name_ko=festival_name_ko,
-                    festival_period_ko=festival_period_ko,
-                    festival_location_ko=festival_location_ko,
-                    program_name=program_name,
-                    concept_description=concept_description,
-                    poster_image_url=poster_image_url,
-                    layout_ref_image_url=card_layout_image_url
-                )
+                    # --- Poster Cardnews ---
+                    elif t in CARDNEWS_TYPES:
+                        result = fn(
+                            project_id=payload.pNo,
+                            festival_name_ko=festival_name_ko,
+                            festival_period_ko=festival_period_ko,
+                            festival_location_ko=festival_location_ko,
+                            program_name=program_name,
+                            concept_description=concept_description,
+                            poster_image_url=poster_image_url,
+                            layout_ref_image_url=card_layout_image_url
+                        )
 
 
-            # --- ETC VIDEO ---
-            elif t in ETC_VIDEO_TYPES:
-                result = fn(
-                    project_id=payload.pNo,
-                    festival_name_ko=festival_name_ko,
-                    festival_period_ko=festival_period_ko,
-                    festival_location_ko=festival_location_ko,
-                    program_name=program_name,
-                    concept_description=concept_description
-                )
+                    # --- ETC VIDEO ---
+                    elif t in ETC_VIDEO_TYPES:
+                        result = fn(
+                            project_id=payload.pNo,
+                            festival_name_ko=festival_name_ko,
+                            festival_period_ko=festival_period_ko,
+                            festival_location_ko=festival_location_ko,
+                            program_name=program_name,
+                            concept_description=concept_description
+                        )
+                except Exception as e:
+                    build_progress.item_failed(payload.pNo, t, str(e))
+                    raise
+                if t in POHS_TYPES:
+                    derivative_cache.save(payload.pNo, t, base_url, run_id=run_id)
+                elif result:
+                    derivative_cache.save(payload.pNo, t, base_url, result=result)
+                build_progress.item_done(payload.pNo, t)
 
             # 결과 처리
             if not result:
@@ -489,12 +555,14 @@ def build_editor_templates(payload: EditorBuildRequest):
         # -------------------------------------------------------
         # 3) before-editor (텍스트 제거 / OCR 템플릿 준비)
         # -------------------------------------------------------
+        build_progress.phase(payload.pNo, "글자 지우기")
         from app.service.editor.make_before_edtior import run as run_before_editor
         run_before_editor(run_id=run_id)
 
         # -------------------------------------------------------
         # 4) total.json 생성 (템플릿 + 파생물 append)
         # -------------------------------------------------------
+        build_progress.phase(payload.pNo, "에디터 템플릿 조립")
         from app.service.editor.mkake_after_editor import build_total_layout
         built_total = build_total_layout(run_id=run_id)
 
@@ -531,10 +599,27 @@ def build_editor_templates(payload: EditorBuildRequest):
         )
         print("resp")
         print(resp)
+        build_progress.finish(payload.pNo, ok=True)
         return resp
         
 
     except Exception as e:
         logger.exception("[editor.build] ERROR")
+        build_progress.finish(payload.pNo, ok=False, error=str(e))
         raise HTTPException(status_code=500, detail=f"Editor build failed: {e}")
+
+
+@router.get("/derivatives/{p_no}")
+def get_derivatives(p_no: int):
+    """이미 만든 파생물과 그때의 베이스 이미지 (같은 베이스면 다시 만들 때 재사용된다)"""
+    return derivative_cache.list_entries(p_no)
+
+
+@router.get("/build/progress/{p_no}")
+def get_build_progress(p_no: int):
+    """빌드 진행 상황 (백엔드가 화면 진행률 표시용으로 조회). 기록이 없으면 404"""
+    data = build_progress.get(p_no)
+    if data is None:
+        raise HTTPException(status_code=404, detail="no build progress")
+    return data
 

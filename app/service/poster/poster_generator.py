@@ -2,6 +2,7 @@ import json
 import openai
 import os
 from dotenv import load_dotenv
+from app.core.config import OPENAI_TEXT_MODEL
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -92,7 +93,7 @@ def create_master_prompt(user_theme, analysis_summary, poster_trend_report, stra
         
         client = openai.OpenAI()
         response = client.chat.completions.create(
-            model="gpt-4-turbo", 
+            model=OPENAI_TEXT_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}

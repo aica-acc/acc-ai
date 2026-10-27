@@ -9,6 +9,8 @@ from openai import OpenAI
 from pydantic import BaseModel
 from typing import List, Optional
 
+from app.service.total_trend.trend_inputs import festival_terms, search_window
+
 load_dotenv()
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
@@ -112,24 +114,28 @@ def generate_keyword_mini_trend(score: int):
     return trends
 
 # 4. 메인 함수
-def get_region_trend_1year(keyword: str, host_name: str, festival_start_date: str):
+def get_region_trend_1year(keyword: str, host_name: str, festival_start_date: str, title: str = ""):
+    """
+    host_name 은 지역(시·군) 이름 (trend_inputs.resolve_region_name 으로 정리된 값).
+    반환의 simulated 가 True 면 region_weekly 는 실제 검색량이 아니라 예시 곡선이다.
+    """
     print(f"\n[RegionTrend] 분석 요청: {host_name} vs {keyword} (Date: {festival_start_date})")
+    terms = festival_terms(keyword, title) or [host_name]
 
     # (1) AI 분석 수행 (여기서는 trend_data 없이 순수 텍스트 정보만 가져옴)
-    ai_result = analyze_region_with_llm(keyword, host_name)
-    
-    # (2) 네이버 데이터랩 요청
+    ai_result = analyze_region_with_llm(", ".join(terms), host_name)
+
+    # (2) 네이버 데이터랩 요청 (지난 축제면 그 축제 시점 기준 1년)
     url = "https://openapi.naver.com/v1/datalab/search"
-    today = datetime.date.today()
-    one_year_ago = today - datetime.timedelta(days=360)
+    start_date, end_date = search_window(festival_start_date)
 
     # 검색어 그룹 설정
     body = {
-        "startDate": one_year_ago.strftime("%Y-%m-%d"),
-        "endDate": today.strftime("%Y-%m-%d"),
+        "startDate": start_date.strftime("%Y-%m-%d"),
+        "endDate": end_date.strftime("%Y-%m-%d"),
         "timeUnit": "week",
         "keywordGroups": [
-            {"groupName": "festival", "keywords": [keyword, f"{keyword} 축제"]},
+            {"groupName": "festival", "keywords": terms},
             {"groupName": "region", "keywords": [f"{host_name} 여행", f"{host_name} 가볼만한곳"]}
         ]
     }
@@ -141,7 +147,8 @@ def get_region_trend_1year(keyword: str, host_name: str, festival_start_date: st
     }
 
     weekly_data = []
-    
+    simulated, simulated_reason = False, None
+
     try:
         res = requests.post(url, headers=headers, data=json.dumps(body).encode("utf-8"), timeout=120)
         data = res.json()
@@ -178,7 +185,9 @@ def get_region_trend_1year(keyword: str, host_name: str, festival_start_date: st
             raise Exception("No Data from Naver")
 
     except Exception as e:
-        # 에러 발생 시 Fallback 가동
+        # 실제 데이터가 없으면 예시 곡선으로 대체하되, 예시임을 반드시 함께 돌려준다
+        simulated = True
+        simulated_reason = "검색량이 너무 적음" if str(e) == "Low Data Volume" else f"네이버 데이터랩 조회 실패: {e}"
         weekly_data = generate_fallback_trend(festival_start_date)
 
     # (3) [수정 3] AI 결과에 'trend_data' 수동 주입
@@ -191,7 +200,11 @@ def get_region_trend_1year(keyword: str, host_name: str, festival_start_date: st
             enriched_word_cloud.append(item_dict)
 
     return {
-        "region_weekly": weekly_data, 
+        "region_weekly": weekly_data,
+        "simulated": simulated,
+        "simulated_reason": simulated_reason,
+        "search_terms": {"festival": terms, "region": [f"{host_name} 여행", f"{host_name} 가볼만한곳"]},
+        "search_window": [start_date.isoformat(), end_date.isoformat()],
         "word_cloud": enriched_word_cloud,
         "family": [k.model_dump() for k in ai_result.family],
         "couple": [k.model_dump() for k in ai_result.couple],

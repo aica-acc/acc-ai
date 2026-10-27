@@ -558,7 +558,7 @@ def main() -> None:
     # 로컬 포스터 파일 경로 (예: PROJECT_ROOT/app/data/banner/...)
     # 축제명에 회차를 같이 넣어도 되고, 안 넣어도 됨
     # 예: "제7회 담양산타축제" 또는 "담양산타축제"
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\arco.png"
+    poster_image_url = str(Path(__file__).resolve().parents[2] / "data" / "banner" / "arco.png")
     festival_name_ko = "예술 인형 축제"
     festival_period_ko = "2025.11.04 ~ 2025.11.09"
     festival_location_ko = "아르코꿈밭극장, 텃밭스튜디오"

@@ -2,6 +2,7 @@ import fitz  # PyMuPDF
 import openai
 import os
 from dotenv import load_dotenv
+from app.core.config import OPENAI_TEXT_MODEL
 from pytrends.request import TrendReq
 import pandas as pd
 import json
@@ -161,7 +162,7 @@ def analyze_pdf(pdf_file_path):
         
         --- (추출할 항목 목록) ---
         - "title": 축제 공식 제목
-        - "date": 축제가 열리는 정확한 날짜와 기간
+        - "date": 축제가 열리는 정확한 날짜와 기간. 반드시 "YYYY.MM.DD ~ YYYY.MM.DD" 형식 (하루짜리는 "YYYY.MM.DD"). 요일·"3일간" 같은 설명은 붙이지 않는다. 기획서에 연도가 없으면 문서의 다른 부분에서 연도를 찾아 채운다
         - "location": 축제가 열리는 구체적인 장소
         - "host": 주최 기관
         - "organizer": 주관 기관
@@ -188,7 +189,7 @@ def analyze_pdf(pdf_file_path):
 
         client = openai.OpenAI()
         response = client.chat.completions.create(
-            model="gpt-4-turbo",  # (테스트 결과 gpt-3.5-turbo보다 gpt-4-turbo가 훨씬 안정적입니다)
+            model=OPENAI_TEXT_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
