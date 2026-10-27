@@ -6,13 +6,13 @@ from dotenv import load_dotenv
 from app.service.mascot.mascot_prompt_graph import run_mascot_prompt_pipeline
 from app.service.mascot.mascot_image_graph import run_mascot_image_pipeline
 
+from app.core.config import PROMOTION_DIR
+
 load_dotenv()
 
-PROJECT_ROOT = os.getenv("FILE_ROOT")
-if not PROJECT_ROOT:
-    raise Exception("❌ PROJECT_ROOT not found in .env")
-
-SAVE_DIR = os.path.join(PROJECT_ROOT, "promotion", "mascot")
+# 포스터와 같은 홍보물 폴더(PROMOTION_DIR) 아래에 저장한다.
+# 백엔드는 python.base-dir(= PROMOTION_DIR) 기준으로 mascot/ 파일을 찾는다.
+SAVE_DIR = str(PROMOTION_DIR / "mascot")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 def create_mascot_prompt(user_theme, analysis_summary, poster_trend_report, strategy_report):
