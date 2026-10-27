@@ -2,12 +2,14 @@
 
 ACC(축제 홍보물 자동생성 서비스)의 **AI 서버**입니다. FastAPI 로 만들어졌고,
 기획서·트렌드 분석, 프롬프트 생성, 이미지·영상 생성, OCR/에디터 후처리를 담당합니다.
-백엔드(`acc-backend`)와 프론트(`acc-front`)가 이 서버를 호출합니다.
+이 서버는 **백엔드(`acc-backend`)만 호출**합니다. 브라우저는 AI 서버에 직접 접근하지 않습니다.
 
 ```
-acc-front ──/ai/, /static/──▶ acc-ai (FastAPI :5000)
-acc-backend ───────────────▶ acc-ai          생성된 파일은 공유 폴더(app/data, promotion, front public)에 저장
+브라우저 ──▶ acc-front(nginx) ──/api/, /static/──▶ acc-backend (Spring :8081) ──▶ acc-ai (FastAPI :5000)
+생성된 파일은 공유 폴더(app/data, promotion, front public)에 저장
 ```
+
+정적 파일(`/static/...`)도 백엔드가 중계합니다(`AiStaticProxyController`). 그래서 응답에 넣는 이미지 URL은 백엔드 또는 사이트 주소(`AI_PUBLIC_BASE_URL`)를 기준으로 만듭니다.
 
 ## 주요 기능
 
@@ -47,7 +49,7 @@ cp .env.example .env        # 값을 채운다 (아래 "환경변수" 참고)
 
 # 3) 필요한 데이터 폴더 준비 (아래 "필수 데이터 폴더" 참고)
 
-# 4) 서버 실행 (백엔드/프론트가 5000 포트를 기대합니다)
+# 4) 서버 실행 (백엔드가 5000 포트를 기대합니다: python.api.url)
 uv run uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
 ```
 
@@ -76,7 +78,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
 | `FRONT_PROJECT_ROOT` | `acc-front` 레포 루트 경로 (**필수**). 하위 `public/data/promotion/...` 에 결과물 저장 |
 | `FILE_ROOT` | 파일 공유 루트 |
 | `DATA_ROOT`, `EDITOR_ROOT_DIR`, `PROMOTION_DIR`, `BANNER_SAVE_DIR` | (선택) 데이터·에디터·생성물·배너 저장 폴더. 비우면 레포 기준 상대 위치 |
-| `AI_PUBLIC_BASE_URL` | AI 서버가 응답에 넣는 정적 파일 주소 (기본 `http://127.0.0.1:5000`). 도메인으로 서비스하면 사용자가 접속하는 주소로 |
+| `AI_PUBLIC_BASE_URL` | 응답에 넣는 정적 파일 URL의 공개 주소. 브라우저는 백엔드의 `/static/**` 중계를 거치므로 기본값은 백엔드 주소(`http://127.0.0.1:8081`). 도메인으로 서비스하면 사용자가 접속하는 주소 |
 | `STATIC_BASE_URL` | (선택) 에디터 정적 URL. 기본 `AI_PUBLIC_BASE_URL + /static/editor` |
 
 경로 관련 값은 `app/core/config.py` 한 곳에서 읽습니다. 코드에서 경로가 필요하면 하드코딩하지 말고 이 모듈을 쓰세요.
@@ -107,7 +109,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
 | `/editor/*` | 에디터 템플릿 빌드(`/build`), 렌더(`/render`), 색상 추천 |
 | `/festival/*` | 축제 정보 |
 | `/report/*` | 기사·공지·SNS·패키지 리포트 |
-| `/static/*` | `app/data` 정적 파일 서빙 (생성 이미지 등) |
+| `/static/*` | `app/data` 정적 파일 서빙 (생성 이미지 등). 브라우저에는 백엔드가 중계 |
 
 ## Docker
 

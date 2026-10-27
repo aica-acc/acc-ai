@@ -17,7 +17,8 @@ EDITOR_ROOT_DIR = Path(os.getenv("EDITOR_ROOT_DIR") or DATA_ROOT / "editor").res
 PROMOTION_DIR = Path(os.getenv("PROMOTION_DIR") or PROJECT_ROOT / "promotion").resolve()
 BANNER_SAVE_DIR = Path(os.getenv("BANNER_SAVE_DIR") or DATA_ROOT / "banners").resolve()
 
-# 브라우저/백엔드가 AI 서버의 정적 파일에 접근할 때 쓰는 주소
-AI_PUBLIC_BASE_URL = os.getenv("AI_PUBLIC_BASE_URL", "http://127.0.0.1:5000").rstrip("/")
+# 응답에 넣는 정적 파일(/static/...) URL 의 공개 주소.
+# 브라우저는 AI 서버에 직접 접근하지 않고 백엔드(/static/** 중계)를 거치므로 백엔드 주소가 기본값이다.
+AI_PUBLIC_BASE_URL = os.getenv("AI_PUBLIC_BASE_URL", "http://127.0.0.1:8081").rstrip("/")
 STATIC_BASE_URL = os.getenv("STATIC_BASE_URL", f"{AI_PUBLIC_BASE_URL}/static/editor")
 TREND_IMAGE_BASE_URL = f"{AI_PUBLIC_BASE_URL}/static/total_trend_images"
