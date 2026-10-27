@@ -1,11 +1,14 @@
 """
-OCR -> ClipDrop remove-text 파이프라인 (배너 여러 장 배치 처리 버전)
+에디터 준비: 생성된 이미지에서 글자를 지운 배경(clean/*.png)을 만든다 (여러 장 배치 처리)
 
-필수 라이브러리:
-    pip install opencv-python pillow requests python-dotenv
+글자 지우기 방식
+  - CLIPDROP_API_KEY 가 있으면 ClipDrop remove-text
+  - 없으면 Replicate 이미지 편집 모델(TEXT_REMOVAL_MODEL, 기본 google/nano-banana).
+    REPLICATE_API_TOKEN 은 이미지 생성에 이미 쓰고 있어 새 키가 필요 없다.
 
 환경변수:
-    CLIPDROP_API_KEY=your_api_key_here
+    CLIPDROP_API_KEY=      (선택)
+    TEXT_REMOVAL_MODEL=    (선택, 기본 google/nano-banana)
 """
 
 import os
@@ -23,7 +26,7 @@ CLIPDROP_API_KEY = os.getenv("CLIPDROP_API_KEY")
 
 # 🔧 경로 기본값
 # app/data/editor/<run_id>/ 구조 기준
-from app.core.config import EDITOR_ROOT_DIR as _EDITOR_ROOT
+from app.core.config import EDITOR_ROOT_DIR as _EDITOR_ROOT, TEXT_REMOVAL_MODEL, OPENAI_TEXT_MODEL
 EDITOR_ROOT_DIR = str(_EDITOR_ROOT)
 OUTPUT_ROOT_DIR = r"./output_editor"  # 지금은 안 쓰지만, 혹시 몰라서 남겨둠
 
@@ -60,6 +63,99 @@ def call_clipdrop_remove_text(image_path: str, output_image_path: str) -> None:
 
 
 # ==============================
+# 2-1. Replicate 이미지 편집 모델로 글자 지우기 (ClipDrop 대체)
+# ==============================
+TEXT_REMOVAL_PROMPT = (
+    "Remove all text from this image: titles, letters, numbers, dates and captions. "
+    "Fill the removed areas naturally so they match the surrounding background. "
+    "Keep everything else exactly the same: composition, colors, illustrations, characters and layout. "
+    "Do not add any new elements."
+)
+
+
+def call_replicate_remove_text(image_path: str, output_image_path: str) -> None:
+    import replicate
+
+    print(f"[TEXT-REMOVAL] {TEXT_REMOVAL_MODEL} 로 글자 지우기: {image_path}")
+    with open(image_path, "rb") as image_file:
+        output = replicate.run(
+            TEXT_REMOVAL_MODEL,
+            input={
+                "prompt": TEXT_REMOVAL_PROMPT,
+                "image_input": [image_file],
+                "aspect_ratio": "match_input_image",
+                "output_format": "png",
+            },
+        )
+    if isinstance(output, list):
+        output = output[0]
+    data = output.read() if hasattr(output, "read") else requests.get(str(output), timeout=120).content
+
+    os.makedirs(os.path.dirname(output_image_path), exist_ok=True)
+    with open(output_image_path, "wb") as out:
+        out.write(data)
+
+    # 에디터는 원본 좌표에 글자를 다시 올리므로 원본과 크기가 같아야 한다
+    with Image.open(image_path) as src, Image.open(output_image_path) as cleaned:
+        if cleaned.size != src.size:
+            print(f"[TEXT-REMOVAL] 크기 보정 {cleaned.size} → {src.size}")
+            cleaned.convert("RGBA").resize(src.size, Image.LANCZOS).save(output_image_path, "PNG")
+    print(f"[TEXT-REMOVAL] saved to: {output_image_path}")
+
+
+def image_has_text(image_path: str) -> bool:
+    """
+    비전 모델로 이미지에 글자가 있는지만 확인한다 (작게 줄여 보내 비용 최소화).
+    지시형 편집 모델은 지울 글자가 없으면 장식 요소를 대신 지우기도 해서, 글자가 없으면 편집하지 않는다.
+    판단에 실패하면 True (기존처럼 지우기 시도).
+    """
+    import base64
+    import io
+    from openai import OpenAI
+
+    try:
+        with Image.open(image_path) as im:
+            im = im.convert("RGB")
+            im.thumbnail((768, 768))
+            buf = io.BytesIO()
+            im.save(buf, "JPEG", quality=85)
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        res = OpenAI().chat.completions.create(
+            model=OPENAI_TEXT_MODEL,
+            temperature=0,
+            max_tokens=3,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Does this image contain any visible text, letters or numbers? Answer only yes or no."},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": "low"}},
+                ],
+            }],
+        )
+        answer = (res.choices[0].message.content or "").strip().lower()
+        print(f"[TEXT-REMOVAL] 글자 유무 판단: {answer!r} ({os.path.basename(image_path)})")
+        return not answer.startswith("no")
+    except Exception as e:
+        print(f"[TEXT-REMOVAL] 글자 유무 판단 실패, 지우기 진행: {e}")
+        return True
+
+
+def remove_text(image_path: str, output_image_path: str) -> None:
+    """ClipDrop 키가 있으면 ClipDrop, 없으면 Replicate 로 글자를 지운다."""
+    if CLIPDROP_API_KEY:
+        call_clipdrop_remove_text(image_path, output_image_path)
+        return
+    # Replicate(지시형 편집)는 글자가 없는 이미지를 망가뜨릴 수 있어, 글자가 있을 때만 편집한다
+    if not image_has_text(image_path):
+        os.makedirs(os.path.dirname(output_image_path), exist_ok=True)
+        with Image.open(image_path) as im:
+            im.save(output_image_path, "PNG")
+        print(f"[TEXT-REMOVAL] 글자 없음 → 원본 사용: {output_image_path}")
+        return
+    call_replicate_remove_text(image_path, output_image_path)
+
+
+# ==============================
 # 3. 한 장 처리 유닛 (type 기반)
 # ==============================
 def process_poster(
@@ -69,7 +165,7 @@ def process_poster(
 ) -> Dict[str, str]:
     """
     before_image 안에 있는 한 장의 이미지를 받아서
-    - ClipDrop remove-text 호출
+    - 글자 지우기 (ClipDrop 또는 Replicate)
     - app/data/editor/<run_id>/clean/<type_name>.png 로 저장
     """
 
@@ -78,7 +174,7 @@ def process_poster(
 
     cleaned_path = os.path.join(clean_dir, f"{type_name}.png")
 
-    call_clipdrop_remove_text(image_path, cleaned_path)
+    remove_text(image_path, cleaned_path)
 
     return {
         "type": type_name,
@@ -98,7 +194,7 @@ def run(
     주어진 run_id에 대해:
 
       - editor/<run_id>/before_image/*.png (또는 jpg 등)을 모두 순회
-      - 각 이미지 파일에 대해 ClipDrop remove-text 실행
+      - 각 이미지 파일에 대해 글자 지우기 실행 (ClipDrop 또는 Replicate)
       - 결과 이미지를 editor/<run_id>/clean/<파일이름>.png 로 저장
 
     리턴값:

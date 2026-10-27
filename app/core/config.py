@@ -26,3 +26,6 @@ TREND_IMAGE_BASE_URL = f"{AI_PUBLIC_BASE_URL}/static/total_trend_images"
 # OpenAI 텍스트 모델 (기획서 분석, 포스터 스타일 제안, 리포트).
 # gpt-4-turbo / gpt-3.5-turbo 는 OpenAI 에서 지원 종료되어 호출 시 404. 환경변수로 바꿀 수 있다.
 OPENAI_TEXT_MODEL = os.getenv("OPENAI_TEXT_MODEL", "gpt-4.1-mini")
+
+# 에디터 준비 단계의 '이미지 속 글자 지우기' 모델 (CLIPDROP_API_KEY 가 없을 때 Replicate 로 처리)
+TEXT_REMOVAL_MODEL = os.getenv("TEXT_REMOVAL_MODEL", "google/nano-banana")
