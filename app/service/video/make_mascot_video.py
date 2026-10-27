@@ -727,6 +727,15 @@ def _resolve_mascot_path_from_url(mascot_image_url: str, project_id: str | int) 
                 f.write(chunk)
         return tmp_path
 
+    # 이미 절대 경로인 파일이면 그대로 쓴다 (public 뒤에 다시 붙이면 경로가 두 번 겹친다)
+
+    as_is = Path(mascot_image_url)
+
+    if as_is.is_absolute() and as_is.exists():
+
+        return as_is
+
+
     # 로컬 경로 (프론트 public 기준 상대경로라고 가정)
     front_root = Path(FRONT_PROJECT_ROOT)
     public_root = front_root / "public"

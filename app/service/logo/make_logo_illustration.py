@@ -664,7 +664,7 @@ def main() -> None:
     # 1) 여기 값만 네가 원하는 걸로 수정해서 쓰면 됨
     p_no = 11
 
-    poster_image_url = r"C:\final_project\ACC\acc-ai\app\data\banner\geoje.png"
+    poster_image_url = str(Path(__file__).resolve().parents[2] / "data" / "banner" / "geoje.png")
     festival_name_ko = "거제몽돌해변축제"
     festival_period_ko = "2013.07.13 ~ 2013.07.14"
     festival_location_ko = "학동흑진주몽돌해변"

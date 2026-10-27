@@ -237,6 +237,12 @@ def _resolve_front_asset(path_or_url: str, project_id: str | int) -> Path:
                 f.write(chunk)
         return tmp_path
 
+    # 이미 절대 경로인 파일이면 그대로 쓴다.
+    # (프론트가 fullPath 로 /data/acc-front/public/... 를 보내면, 아래처럼 public 뒤에 다시 붙여 경로가 두 번 겹쳤다)
+    as_is = Path(path_or_url)
+    if as_is.is_absolute() and as_is.exists():
+        return as_is
+
     # 로컬 (FRONT public 기준)
     front_root = Path(FRONT_PROJECT_ROOT)
     public_root = front_root / "public"

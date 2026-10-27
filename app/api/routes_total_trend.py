@@ -1,5 +1,6 @@
 # app/router/trend_total_router.py
 
+from app.core.config import TREND_IMAGE_BASE_URL
 import os
 import json
 from fastapi import APIRouter, Form, HTTPException
@@ -22,7 +23,7 @@ async def analyze_total_trend(
     
     def convert_local_path_to_url(path: str):
         filename = os.path.basename(path)
-        return f"http://127.0.0.1:5000/static/total_trend_images/{filename}"
+        return f"{TREND_IMAGE_BASE_URL}/{filename}"
 
     try:
         # ================================
@@ -81,6 +82,8 @@ async def analyze_total_trend(
             "related_keywords": related_keywords,
             "naver_datalab": naver_weekly,
             "youtube_trend": youtube_trend,
+            # 구글 트렌드는 비공식 수집(pytrends)이라 자주 막힌다. 실패하면 화면에 알린다
+            "notices": [] if google_trend else ["구글 트렌드를 일시적으로 조회하지 못해 네이버 데이터만 표시합니다."],
         }
 
     except Exception as e:
