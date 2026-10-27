@@ -283,6 +283,46 @@ def _local_path_to_static_url(path) -> str:
     rel = path.relative_to(root)
     return f"{STATIC_BASE_URL}/{rel.as_posix()}"
 
+def _normalize_extra_item(item: dict) -> dict:
+    """
+    파생물(로고·표지판·굿즈·카드뉴스 등) 항목을 에디터가 바로 그릴 수 있게 정리한다.
+      - 이미지 url 을 브라우저용 웹 경로(/data/promotion/...)로 바꾼다 (컨테이너 파일 경로는 브라우저가 못 연다)
+      - 캔버스 크기를 이미지 실제 픽셀 크기로 채운다 (없으면 에디터가 800x450 가로 캔버스에 작게 그렸다)
+      - 확장자와 실제 형식이 다르면(.png 인데 JPEG) 진짜 PNG 로 다시 저장한다
+    """
+    canvas_data = item.setdefault("canvasData", {})
+    for obj in canvas_data.get("objects") or []:
+        url = obj.get("url")
+        if obj.get("type") != "image" or not url:
+            continue
+        normalized = url.replace("\\", "/")
+        if "/public/data/" in normalized:
+            rel = normalized.split("/public/", 1)[1]           # data/promotion/...
+        elif normalized.lstrip("/").startswith("data/"):
+            rel = normalized.lstrip("/")
+        else:
+            continue
+        local = Path(normalized) if Path(normalized).is_absolute() and Path(normalized).exists()             else Path(FRONT_PROJECT_ROOT or "") / "public" / rel
+        obj["url"] = "/" + rel
+        if not local.exists():
+            continue
+        try:
+            with Image.open(local) as im:
+                im.load()
+                w, h = im.size
+                if local.suffix.lower() == ".png" and im.format != "PNG":
+                    logger.info("[editor.build] %s 실제 형식 %s → PNG 로 다시 저장", local.name, im.format)
+                    im.save(local, "PNG")
+        except Exception as e:
+            logger.warning("[editor.build] 이미지 정보를 읽지 못함: %s (%s)", local, e)
+            continue
+        canvas_data.setdefault("width", w)
+        canvas_data.setdefault("height", h)
+        for k, v in (("left", 0), ("top", 0), ("scaleX", 1), ("scaleY", 1)):
+            obj.setdefault(k, v)
+    return item
+
+
 def append_extra_items_to_total(total_json_path: str, extra_items: List[dict]) -> str:
     """
     build_total_layout(...) 이 리턴한 total.json 경로에
@@ -299,6 +339,7 @@ def append_extra_items_to_total(total_json_path: str, extra_items: List[dict]) -
         total_data = json.load(f)
 
     logger.info("[editor.build] total.json root type=%s", type(total_data).__name__)
+    extra_items = [_normalize_extra_item(it) for it in extra_items]
 
     # 1) 루트가 리스트인 경우: 그냥 뒤에 붙이기
     if isinstance(total_data, list):
