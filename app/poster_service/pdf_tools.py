@@ -163,7 +163,7 @@ def analyze_pdf(pdf_file_path):
         
         --- (추출할 항목 목록) ---
         - "title": 축제 공식 제목
-        - "date": 축제가 열리는 정확한 날짜와 기간
+        - "date": 축제가 열리는 정확한 날짜와 기간. 반드시 "YYYY.MM.DD ~ YYYY.MM.DD" 형식 (하루짜리는 "YYYY.MM.DD"). 요일·"3일간" 같은 설명은 붙이지 않는다. 기획서에 연도가 없으면 문서의 다른 부분에서 연도를 찾아 채운다
         - "location": 축제가 열리는 구체적인 장소
         - "host": 주최 기관
         - "organizer": 주관 기관
