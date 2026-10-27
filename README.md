@@ -30,15 +30,16 @@ API 문서는 서버를 띄운 뒤 **`http://localhost:5000/docs`** (Swagger) �
 - Python **3.11** (`.python-version`), 패키지 관리 **uv** (`uv.lock` 으로 버전 고정)
 - FastAPI, Uvicorn
 - LangChain, LangGraph, OpenAI, Replicate, Google GenAI(Gemini)
-- PaddleOCR, Ultralytics(YOLO), OpenCV, Pillow, CairoSVG
-- moviepy, **ffmpeg**
-- ChromaDB, sentence-transformers, transformers (torch)
-- Selenium, BeautifulSoup, yt-dlp (수집)
+- OpenCV(headless), Pillow, CairoSVG, **ffmpeg**
+- sentence-transformers (torch **CPU 전용**)
+- BeautifulSoup, pytrends, SerpAPI (수집)
+
+이미지·영상 생성은 외부 API 로 처리하므로 GPU 가 필요 없습니다. `pyproject.toml` 에는 코드에서 실제로 import 하는 패키지만 둡니다.
 
 ## 빠른 실행 (로컬)
 
-사전 준비: Python 3.11, [uv](https://docs.astral.sh/uv/), **ffmpeg**(PATH 에 등록), 디스크 여유 수 GB
-(`torch` 와 CUDA 라이브러리가 `uv.lock` 대로 설치되어 매우 큽니다).
+사전 준비: Python 3.11, [uv](https://docs.astral.sh/uv/), **ffmpeg**(PATH 에 등록).
+`torch` 는 CPU 전용 빌드(`pytorch-cpu` 인덱스)로 설치됩니다.
 
 ```bash
 # 1) 의존성 설치
@@ -115,11 +116,10 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
 
 `Dockerfile` 은 멀티 스테이지입니다.
 
-- 빌더: `uv sync --frozen` 으로 `uv.lock` 그대로 설치.
-  `openai/CLIP` 은 최신 setuptools 에서 `pkg_resources` 가 없어 빌드가 깨지므로, `clip` 만 따로 `setuptools<81` 환경에서 격리 없이 설치합니다.
-- 런타임: `python:3.11-slim` + `ffmpeg`, `libgl1`, `libcairo2` 등.
+- 빌더: `uv sync --frozen` 으로 `uv.lock` 그대로 설치 (torch 는 CPU 전용).
+- 런타임: `python:3.11-slim` + `ffmpeg`, `libcairo2` 등.
 - 데이터 폴더(`app/data`, `app/fonts`)는 이미지에 넣지 않고 **볼륨으로 마운트**합니다.
-- 이미지 크기는 약 **4.8GB(압축)** / 15.8GB(풀었을 때) 입니다. 첫 빌드에 시간이 오래 걸립니다.
+- 이미지 크기는 약 **3.3GB**, 기동 후 메모리는 약 0.9GB 입니다. (CUDA 포함 이전 버전: 15.8GB / 1.3GB)
 
 ```bash
 docker build -t scv3114/acc-ai .
