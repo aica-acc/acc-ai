@@ -22,3 +22,7 @@ BANNER_SAVE_DIR = Path(os.getenv("BANNER_SAVE_DIR") or DATA_ROOT / "banners").re
 AI_PUBLIC_BASE_URL = os.getenv("AI_PUBLIC_BASE_URL", "http://127.0.0.1:8081").rstrip("/")
 STATIC_BASE_URL = os.getenv("STATIC_BASE_URL", f"{AI_PUBLIC_BASE_URL}/static/editor")
 TREND_IMAGE_BASE_URL = f"{AI_PUBLIC_BASE_URL}/static/total_trend_images"
+
+# OpenAI 텍스트 모델 (기획서 분석, 포스터 스타일 제안, 리포트).
+# gpt-4-turbo / gpt-3.5-turbo 는 OpenAI 에서 지원 종료되어 호출 시 404. 환경변수로 바꿀 수 있다.
+OPENAI_TEXT_MODEL = os.getenv("OPENAI_TEXT_MODEL", "gpt-4.1-mini")

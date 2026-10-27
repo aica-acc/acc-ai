@@ -2,6 +2,7 @@ import fitz  # PyMuPDF
 import openai
 import os
 from dotenv import load_dotenv
+from app.core.config import OPENAI_TEXT_MODEL
 from pytrends.request import TrendReq
 import pandas as pd
 import json
@@ -189,7 +190,7 @@ def analyze_pdf(pdf_file_path):
 
         client = openai.OpenAI()
         response = client.chat.completions.create(
-            model="gpt-4-turbo",  # (테스트 결과 gpt-3.5-turbo보다 gpt-4-turbo가 훨씬 안정적입니다)
+            model=OPENAI_TEXT_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -244,7 +245,7 @@ def expand_keywords_with_ai(keywords_list):
     try:
         client = openai.OpenAI()
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=OPENAI_TEXT_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}

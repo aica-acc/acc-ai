@@ -2,6 +2,7 @@ import openai
 import os
 import json
 from dotenv import load_dotenv
+from app.core.config import OPENAI_TEXT_MODEL
 
 load_dotenv()
 
@@ -159,7 +160,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
     try:
         client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         response = client.chat.completions.create(
-            model="gpt-4-turbo",
+            model=OPENAI_TEXT_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
