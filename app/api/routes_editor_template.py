@@ -35,7 +35,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ...
 FRONT_PROJECT_ROOT = os.getenv("FRONT_PROJECT_ROOT")
 ...
-PROMOTION_CODE = "M000001"  # 고정값
+from app.core import request_member
 
 PROJECT_ROOT = os.getenv("PROJECT_ROOT")
 if not PROJECT_ROOT:
@@ -391,6 +391,8 @@ def build_editor_templates(payload: EditorBuildRequest):
         festival_location_ko = payload_data.location
         poster_image_url = payload_data.posterImageUrl
         mascot_image_url = getattr(payload_data, "mascotImageUrl", None)
+        # 파생물은 베이스와 같은 회원 폴더에 저장한다 (예전: 모두 M000001)
+        request_member.use_member_from_path(poster_image_url, mascot_image_url)
         concept_description = payload_data.conceptDescription
         program_name = payload_data.programName
 

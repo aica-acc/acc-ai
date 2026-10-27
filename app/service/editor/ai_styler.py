@@ -127,6 +127,13 @@ def load_image_as_data_url(image_path_or_url: str) -> str:
         except Exception as e:
             raise FileNotFoundError(f"이미지 URL 다운로드 실패: {image_path_or_url}, 에러: {e}")
     
+    # 백엔드가 브라우저 주소(/files/토큰)를 풀어 넘긴 웹 경로: /static/... (AI app/data), /data/promotion/... (프론트 public)
+    if image_path_or_url.startswith("/static/"):
+        image_path_or_url = str(Path("app/data") / image_path_or_url[len("/static/"):])
+    elif image_path_or_url.startswith("/data/promotion/"):
+        front_root = os.getenv("FRONT_PROJECT_ROOT", "")
+        image_path_or_url = str(Path(front_root) / "public" / image_path_or_url.lstrip("/"))
+
     # 로컬 파일 경로인 경우
     path_obj = Path(image_path_or_url)
     if not path_obj.exists():

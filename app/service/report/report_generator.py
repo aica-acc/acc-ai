@@ -134,8 +134,10 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
         """
 
     elif report_type == "package":
-        # 자바에서 보낸 실제 경로 받기 (없으면 기본값)
-        real_poster_path = metadata.get('poster_image', 'poster_main.jpg')
+        # 패키지 안의 파일 이름은 화면에 그대로 보이므로 서버 경로가 아니라 표시용 이름을 쓴다 (확장자만 실제 파일을 따른다)
+        poster_src = str(metadata.get('poster_image') or '')
+        ext = os.path.splitext(poster_src.split('?')[0])[1].lower()
+        real_poster_path = "메인포스터" + (ext if ext in ('.png', '.jpg', '.jpeg', '.webp') else '.png')
         
         user_prompt = f"""
         {info_text}
@@ -175,7 +177,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
         # 에러 발생 시에도 프론트가 죽지 않게 최소한의 JSON 반환
         error_json = {
             "title": "생성 오류",
-            "body": f"<p>죄송합니다. 글을 작성하는 중에 문제가 발생했습니다. ({str(e)})</p>",
+            "body": "<p>죄송합니다. 글을 작성하는 중에 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.</p>",
             "summary": [],
             "info": {},
             "sidebar": {"posters": [], "links": []}

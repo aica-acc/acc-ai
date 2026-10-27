@@ -27,7 +27,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ...
 FRONT_PROJECT_ROOT = os.getenv("FRONT_PROJECT_ROOT")
 ...
-PROMOTION_CODE = "M000001"  # 고정값
+from app.core import request_member  # 회원 폴더는 요청마다 (request_member)
 
 load_dotenv()
 
@@ -861,7 +861,7 @@ def run_mascot_video_to_editor(
     # 6. FRONT public/data/promotion/M000001/{pNo}/video/poster_video.mp4 로 이동
     front_root = Path(FRONT_PROJECT_ROOT)
     public_root = front_root / "public"
-    rel_dir = Path("data") / "promotion" / PROMOTION_CODE / pNo / "video"
+    rel_dir = Path("data") / "promotion" / request_member.member_no() / pNo / "video"
     target_dir = public_root / rel_dir
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -869,7 +869,7 @@ def run_mascot_video_to_editor(
     shutil.move(str(final_temp), target_path)
     print(f"✅ 최종 포스터 홍보 영상 저장: {target_path}")
 
-    db_rel_path = (Path("data") / "promotion" / PROMOTION_CODE / pNo / "video" / "mascot_video.mp4").as_posix()
+    db_rel_path = (Path("data") / "promotion" / request_member.member_no() / pNo / "video" / "mascot_video.mp4").as_posix()
 
     result: Dict[str, Any] = {
         "db_file_type": "mascot_video",
