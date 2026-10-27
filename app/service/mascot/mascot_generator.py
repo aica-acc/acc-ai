@@ -15,6 +15,18 @@ load_dotenv()
 SAVE_DIR = str(PROMOTION_DIR / "mascot")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
+# 한 장이 실패했을 때 순서대로 재시도할 모델
+FALLBACK_MODELS = ["recraft", "sd3"]
+
+
+def _remove_files(paths):
+    for p in paths:
+        try:
+            if p and os.path.exists(p):
+                os.remove(p)
+        except OSError as e:
+            print(f"[mascot_generator] 파일 삭제 실패: {p} ({e})")
+
 def create_mascot_prompt(user_theme, analysis_summary, poster_trend_report, strategy_report):
     provided_context = f"""
     [User Theme]
@@ -67,14 +79,33 @@ def create_mascot_images(prompt_options):
             raw_prompt=raw_prompt,
             output_path=filepath,
         )
-        
+
         print("[mascot_generator]   run_mascot_image_pipeline 결과(raw) =")
         print(json.dumps(img, ensure_ascii=False, indent=2))
 
-        # FAIL FAST: pipeline 실패
+        # 실패하면 다른 모델로 재시도한다.
+        # (예: flux 의 안전 필터가 평범한 마스코트를 NSFW 로 오탐해 거부하는 경우)
+        if img.get("status") != "success":
+            failed_model = img.get("model_name")
+            for fallback in FALLBACK_MODELS:
+                if fallback == failed_model:
+                    continue
+                print(f"[mascot_generator] ⚠️ {failed_model} 실패({img.get('error')}) → {fallback} 로 재시도")
+                img = run_mascot_image_pipeline(
+                    style_name=style,
+                    raw_prompt=raw_prompt,
+                    output_path=filepath,
+                    model=fallback,
+                )
+                if img.get("status") == "success":
+                    break
+
+        # 재시도까지 실패: 이번 요청에서 만든 파일을 지워 다음 생성에 섞이지 않게 한다
+        # (백엔드는 AI 폴더에 남은 이미지를 '생성 후 저장 실패분'으로 보고 재사용한다)
         if img.get("status") != "success":
             msg = img.get("message") or "IMAGE_PIPELINE_FAILED"
-            print(f"[mascot_generator] ❌ pipeline 실패: {msg}")
+            print(f"[mascot_generator] ❌ pipeline 실패: {msg} ({img.get('error')})")
+            _remove_files([r["file_path"] for r in results] + [filepath])
             return {
                 "status": "error",
                 "error": msg,
