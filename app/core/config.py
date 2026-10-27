@@ -27,5 +27,11 @@ TREND_IMAGE_BASE_URL = f"{AI_PUBLIC_BASE_URL}/static/total_trend_images"
 # gpt-4-turbo / gpt-3.5-turbo 는 OpenAI 에서 지원 종료되어 호출 시 404. 환경변수로 바꿀 수 있다.
 OPENAI_TEXT_MODEL = os.getenv("OPENAI_TEXT_MODEL", "gpt-4.1-mini")
 
-# 에디터 준비 단계의 '이미지 속 글자 지우기' 모델 (CLIPDROP_API_KEY 가 없을 때 Replicate 로 처리)
-TEXT_REMOVAL_MODEL = os.getenv("TEXT_REMOVAL_MODEL", "google/nano-banana")
+# 에디터 준비 단계의 '이미지 속 글자 지우기'. CLIPDROP_API_KEY 가 있으면 항상 ClipDrop 이 우선이다.
+#  - replicate : REPLICATE_API_TOKEN 으로 Replicate 이미지 편집 모델 호출 (기본, 결제 연결됨)
+#  - gemini    : GEMINI_API_KEY 로 구글에 직접 호출. 무료 등급 키는 이미지 모델 한도가 없어(429) 결제 연결 필요.
+#                실패하면 Replicate 로 대체한다
+TEXT_REMOVAL_PROVIDER = os.getenv("TEXT_REMOVAL_PROVIDER", "replicate").lower()
+TEXT_REMOVAL_MODEL = os.getenv("TEXT_REMOVAL_MODEL") or (
+    "google/nano-banana" if TEXT_REMOVAL_PROVIDER == "replicate" else "gemini-2.5-flash-image"
+)

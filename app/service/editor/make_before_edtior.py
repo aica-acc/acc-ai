@@ -3,12 +3,15 @@
 
 글자 지우기 방식
   - CLIPDROP_API_KEY 가 있으면 ClipDrop remove-text
-  - 없으면 Replicate 이미지 편집 모델(TEXT_REMOVAL_MODEL, 기본 google/nano-banana).
-    REPLICATE_API_TOKEN 은 이미지 생성에 이미 쓰고 있어 새 키가 필요 없다.
+  - 없으면 TEXT_REMOVAL_PROVIDER 의 이미지 편집 모델
+      replicate(기본) : REPLICATE_API_TOKEN 으로 Replicate (TEXT_REMOVAL_MODEL, 기본 google/nano-banana)
+      gemini          : GEMINI_API_KEY 로 구글에 직접 (기본 gemini-2.5-flash-image). 결제 연결 필요, 실패 시 Replicate
+    두 키 모두 다른 기능에 이미 쓰고 있어 새 키가 필요 없다.
 
 환경변수:
     CLIPDROP_API_KEY=      (선택)
-    TEXT_REMOVAL_MODEL=    (선택, 기본 google/nano-banana)
+    TEXT_REMOVAL_PROVIDER= (선택, gemini | replicate)
+    TEXT_REMOVAL_MODEL=    (선택)
 """
 
 import os
@@ -26,7 +29,7 @@ CLIPDROP_API_KEY = os.getenv("CLIPDROP_API_KEY")
 
 # 🔧 경로 기본값
 # app/data/editor/<run_id>/ 구조 기준
-from app.core.config import EDITOR_ROOT_DIR as _EDITOR_ROOT, TEXT_REMOVAL_MODEL, OPENAI_TEXT_MODEL
+from app.core.config import EDITOR_ROOT_DIR as _EDITOR_ROOT, TEXT_REMOVAL_PROVIDER, TEXT_REMOVAL_MODEL, OPENAI_TEXT_MODEL
 EDITOR_ROOT_DIR = str(_EDITOR_ROOT)
 OUTPUT_ROOT_DIR = r"./output_editor"  # 지금은 안 쓰지만, 혹시 몰라서 남겨둠
 
@@ -65,6 +68,9 @@ def call_clipdrop_remove_text(image_path: str, output_image_path: str) -> None:
 # ==============================
 # 2-1. Replicate 이미지 편집 모델로 글자 지우기 (ClipDrop 대체)
 # ==============================
+# Gemini 실패 시 대체로 쓰는 Replicate 모델 (같은 계열)
+REPLICATE_TEXT_REMOVAL_MODEL = os.getenv("REPLICATE_TEXT_REMOVAL_MODEL", "google/nano-banana")
+
 TEXT_REMOVAL_PROMPT = (
     "Remove all text from this image: titles, letters, numbers, dates and captions. "
     "Fill the removed areas naturally so they match the surrounding background. "
@@ -76,10 +82,12 @@ TEXT_REMOVAL_PROMPT = (
 def call_replicate_remove_text(image_path: str, output_image_path: str) -> None:
     import replicate
 
-    print(f"[TEXT-REMOVAL] {TEXT_REMOVAL_MODEL} 로 글자 지우기: {image_path}")
+    # TEXT_REMOVAL_MODEL 이 Gemini 모델명(대체 경로)이면 Replicate 기본 모델을 쓴다
+    model = TEXT_REMOVAL_MODEL if "/" in TEXT_REMOVAL_MODEL else REPLICATE_TEXT_REMOVAL_MODEL
+    print(f"[TEXT-REMOVAL] {model}(Replicate) 로 글자 지우기: {image_path}")
     with open(image_path, "rb") as image_file:
         output = replicate.run(
-            TEXT_REMOVAL_MODEL,
+            model,
             input={
                 "prompt": TEXT_REMOVAL_PROMPT,
                 "image_input": [image_file],
@@ -95,11 +103,7 @@ def call_replicate_remove_text(image_path: str, output_image_path: str) -> None:
     with open(output_image_path, "wb") as out:
         out.write(data)
 
-    # 에디터는 원본 좌표에 글자를 다시 올리므로 원본과 크기가 같아야 한다
-    with Image.open(image_path) as src, Image.open(output_image_path) as cleaned:
-        if cleaned.size != src.size:
-            print(f"[TEXT-REMOVAL] 크기 보정 {cleaned.size} → {src.size}")
-            cleaned.convert("RGBA").resize(src.size, Image.LANCZOS).save(output_image_path, "PNG")
+    _match_size(image_path, output_image_path)
     print(f"[TEXT-REMOVAL] saved to: {output_image_path}")
 
 
@@ -140,19 +144,66 @@ def image_has_text(image_path: str) -> bool:
         return True
 
 
+def call_gemini_remove_text(image_path: str, output_image_path: str) -> None:
+    from google import genai
+    from google.genai import types
+
+    print(f"[TEXT-REMOVAL] {TEXT_REMOVAL_MODEL}(Gemini) 로 글자 지우기: {image_path}")
+    with Image.open(image_path) as src:
+        src_img = src.convert("RGB")
+    # 클라이언트를 변수에 담아 둔다 (바로 호출하면 요청 전에 정리되어 'client has been closed')
+    client = genai.Client()
+    res = client.models.generate_content(
+        model=TEXT_REMOVAL_MODEL,
+        contents=[TEXT_REMOVAL_PROMPT, src_img],
+        config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+    )
+    data = None
+    for part in (res.candidates[0].content.parts if res.candidates else []):
+        if getattr(part, "inline_data", None) and part.inline_data.data:
+            data = part.inline_data.data
+            break
+    if data is None:
+        raise RuntimeError(f"Gemini 가 이미지를 돌려주지 않았습니다: {getattr(res, 'text', '')!r}")
+
+    os.makedirs(os.path.dirname(output_image_path), exist_ok=True)
+    with open(output_image_path, "wb") as out:
+        out.write(data)
+    _match_size(image_path, output_image_path)
+    print(f"[TEXT-REMOVAL] saved to: {output_image_path}")
+
+
+def _match_size(src_path: str, out_path: str) -> None:
+    # 에디터는 원본 좌표에 글자를 다시 올리므로 원본과 크기가 같아야 한다
+    with Image.open(src_path) as src, Image.open(out_path) as cleaned:
+        if cleaned.size != src.size:
+            print(f"[TEXT-REMOVAL] 크기 보정 {cleaned.size} → {src.size}")
+            cleaned.convert("RGBA").resize(src.size, Image.LANCZOS).save(out_path, "PNG")
+
+
 def remove_text(image_path: str, output_image_path: str) -> None:
-    """ClipDrop 키가 있으면 ClipDrop, 없으면 Replicate 로 글자를 지운다."""
+    """ClipDrop 키가 있으면 ClipDrop, 없으면 TEXT_REMOVAL_PROVIDER(gemini/replicate)로 글자를 지운다."""
     if CLIPDROP_API_KEY:
         call_clipdrop_remove_text(image_path, output_image_path)
         return
-    # Replicate(지시형 편집)는 글자가 없는 이미지를 망가뜨릴 수 있어, 글자가 있을 때만 편집한다
+    # 지시형 편집 모델은 글자가 없는 이미지를 망가뜨릴 수 있어, 글자가 있을 때만 편집한다
     if not image_has_text(image_path):
         os.makedirs(os.path.dirname(output_image_path), exist_ok=True)
         with Image.open(image_path) as im:
             im.save(output_image_path, "PNG")
         print(f"[TEXT-REMOVAL] 글자 없음 → 원본 사용: {output_image_path}")
         return
-    call_replicate_remove_text(image_path, output_image_path)
+    if TEXT_REMOVAL_PROVIDER == "replicate":
+        call_replicate_remove_text(image_path, output_image_path)
+        return
+    try:
+        call_gemini_remove_text(image_path, output_image_path)
+    except Exception as e:
+        # 무료 등급 키는 이미지 모델 한도가 없어 429(RESOURCE_EXHAUSTED)가 난다 → 결제가 연결된 Replicate 로 대체
+        if not os.getenv("REPLICATE_API_TOKEN"):
+            raise
+        print(f"[TEXT-REMOVAL] Gemini 실패 → Replicate 로 대체: {str(e)[:120]}")
+        call_replicate_remove_text(image_path, output_image_path)
 
 
 # ==============================
