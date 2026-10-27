@@ -28,10 +28,13 @@ TREND_IMAGE_BASE_URL = f"{AI_PUBLIC_BASE_URL}/static/total_trend_images"
 OPENAI_TEXT_MODEL = os.getenv("OPENAI_TEXT_MODEL", "gpt-4.1-mini")
 
 # 에디터 준비 단계의 '이미지 속 글자 지우기'. CLIPDROP_API_KEY 가 있으면 항상 ClipDrop 이 우선이다.
-#  - replicate : REPLICATE_API_TOKEN 으로 Replicate 이미지 편집 모델 호출 (기본, 결제 연결됨)
-#  - gemini    : GEMINI_API_KEY 로 구글에 직접 호출. 무료 등급 키는 이미지 모델 한도가 없어(429) 결제 연결 필요.
-#                실패하면 Replicate 로 대체한다
-TEXT_REMOVAL_PROVIDER = os.getenv("TEXT_REMOVAL_PROVIDER", "replicate").lower()
-TEXT_REMOVAL_MODEL = os.getenv("TEXT_REMOVAL_MODEL") or (
-    "google/nano-banana" if TEXT_REMOVAL_PROVIDER == "replicate" else "gemini-2.5-flash-image"
-)
+#  - openai    : OPENAI_API_KEY 로 이미지 편집 (기본 gpt-image-2.5-flare). 실측에서 글자 외 요소를 가장 잘 유지하고
+#                원본 비율·높은 해상도로 돌려주며 장당 약 $0.02 (2026-10 비교, docs/TROUBLESHOOTING.md #20)
+#  - replicate : REPLICATE_API_TOKEN 으로 google/nano-banana. 글자가 없으면 장식 요소를 지우는 경향
+#  - gemini    : GEMINI_API_KEY 로 구글에 직접. 무료 등급 키는 이미지 모델 한도가 없어 결제 연결 필요
+# openai·gemini 가 실패하면 Replicate 로 대체한다
+TEXT_REMOVAL_PROVIDER = os.getenv("TEXT_REMOVAL_PROVIDER", "openai").lower()
+TEXT_REMOVAL_MODEL = os.getenv("TEXT_REMOVAL_MODEL") or {
+    "replicate": "google/nano-banana",
+    "gemini": "gemini-2.5-flash-image",
+}.get(TEXT_REMOVAL_PROVIDER, "gpt-image-2.5-flare")

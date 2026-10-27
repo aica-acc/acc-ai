@@ -3,9 +3,11 @@
 
 글자 지우기 방식
   - CLIPDROP_API_KEY 가 있으면 ClipDrop remove-text
-  - 없으면 TEXT_REMOVAL_PROVIDER 의 이미지 편집 모델
-      replicate(기본) : REPLICATE_API_TOKEN 으로 Replicate (TEXT_REMOVAL_MODEL, 기본 google/nano-banana)
-      gemini          : GEMINI_API_KEY 로 구글에 직접 (기본 gemini-2.5-flash-image). 결제 연결 필요, 실패 시 Replicate
+  - 없으면 TEXT_REMOVAL_PROVIDER 의 이미지 편집 모델 (app/core/config.py 참고)
+      openai(기본) : gpt-image-2.5-flare
+      replicate    : google/nano-banana
+      gemini       : gemini-2.5-flash-image (결제 연결 필요)
+    openai·gemini 가 실패하면 Replicate 로 대체한다.
     두 키 모두 다른 기능에 이미 쓰고 있어 새 키가 필요 없다.
 
 환경변수:
@@ -144,6 +146,26 @@ def image_has_text(image_path: str) -> bool:
         return True
 
 
+def call_openai_remove_text(image_path: str, output_image_path: str) -> None:
+    import base64
+    from openai import OpenAI
+
+    print(f"[TEXT-REMOVAL] {TEXT_REMOVAL_MODEL}(OpenAI) 로 글자 지우기: {image_path}")
+    with open(image_path, "rb") as image_file:
+        res = OpenAI().images.edit(
+            model=TEXT_REMOVAL_MODEL,
+            image=image_file,
+            prompt=TEXT_REMOVAL_PROMPT,
+            size="auto",        # 원본 비율 유지 (1:3 현수막 포함)
+            quality="medium",
+        )
+    os.makedirs(os.path.dirname(output_image_path), exist_ok=True)
+    with open(output_image_path, "wb") as out:
+        out.write(base64.b64decode(res.data[0].b64_json))
+    _match_size(image_path, output_image_path)
+    print(f"[TEXT-REMOVAL] saved to: {output_image_path}")
+
+
 def call_gemini_remove_text(image_path: str, output_image_path: str) -> None:
     from google import genai
     from google.genai import types
@@ -182,7 +204,7 @@ def _match_size(src_path: str, out_path: str) -> None:
 
 
 def remove_text(image_path: str, output_image_path: str) -> None:
-    """ClipDrop 키가 있으면 ClipDrop, 없으면 TEXT_REMOVAL_PROVIDER(gemini/replicate)로 글자를 지운다."""
+    """ClipDrop 키가 있으면 ClipDrop, 없으면 TEXT_REMOVAL_PROVIDER(openai/replicate/gemini)로 글자를 지운다."""
     if CLIPDROP_API_KEY:
         call_clipdrop_remove_text(image_path, output_image_path)
         return
@@ -197,12 +219,15 @@ def remove_text(image_path: str, output_image_path: str) -> None:
         call_replicate_remove_text(image_path, output_image_path)
         return
     try:
-        call_gemini_remove_text(image_path, output_image_path)
+        if TEXT_REMOVAL_PROVIDER == "gemini":
+            call_gemini_remove_text(image_path, output_image_path)
+        else:
+            call_openai_remove_text(image_path, output_image_path)
     except Exception as e:
-        # 무료 등급 키는 이미지 모델 한도가 없어 429(RESOURCE_EXHAUSTED)가 난다 → 결제가 연결된 Replicate 로 대체
+        # 예: Gemini 무료 등급 키의 429(RESOURCE_EXHAUSTED), 일시 장애 → 결제가 연결된 Replicate 로 대체
         if not os.getenv("REPLICATE_API_TOKEN"):
             raise
-        print(f"[TEXT-REMOVAL] Gemini 실패 → Replicate 로 대체: {str(e)[:120]}")
+        print(f"[TEXT-REMOVAL] {TEXT_REMOVAL_PROVIDER} 실패 → Replicate 로 대체: {str(e)[:120]}")
         call_replicate_remove_text(image_path, output_image_path)
 
 
