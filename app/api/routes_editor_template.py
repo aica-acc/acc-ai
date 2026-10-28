@@ -56,7 +56,6 @@ if not FRONT_PROJECT_ROOT:
     raise ValueError("FRONT_PROJECT_ROOT 가 .env에 설정되어 있지 않습니다.")
 
 api_key = os.getenv("GEMINI_API_KEY")
-veo_client = genai.Client(api_key=GEMINI_API_KEY)
 openai_client = OpenAI()
 
 #이건 바꿔야함 
@@ -64,8 +63,6 @@ test_layout_image_url = "data/promotion/M000001/25/poster/good_2.jpg"
 card_layout_image_url = "data/promotion/M000001/25/poster/card.png"
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 # 환경설정 모델들
-VEO_MODEL = "veo-3.1-generate-preview"
-MODEL = "veo-3.1-generate-preview" # Veo 3.1 모델 이름
 # ============================================================
 # 0. 환경설정 및 PATH
 # ============================================================
