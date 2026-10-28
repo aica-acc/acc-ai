@@ -167,6 +167,8 @@ class PosterIn(BaseModel):
 class EditorBuildRequest(BaseModel):
     pNo: int
     posters: List[PosterIn]
+    # 데모(test 계정): 이미 만든 결과만 쓰고 새로 생성하지 않는다 (백엔드가 정한다)
+    demo: bool = False
 
 
 class PythonBuildResponse(BaseModel):
@@ -415,7 +417,13 @@ def build_editor_templates(payload: EditorBuildRequest):
             # 같은 베이스로 이미 만든 유형은 다시 생성하지 않는다 (derivative_cache)
             base_url = mascot_image_url if t in (MSHS_TYPES | MASCOT_VIDEO_TYPES) else poster_image_url
             cached = derivative_cache.find(payload.pNo, t, base_url)
+            if not cached and payload.demo:
+                cached = derivative_cache.find_any(payload.pNo, t)
             result = None
+            if not cached and payload.demo:
+                logger.info(f"[editor.build] 데모: {t} 는 미리 만든 결과가 없어 건너뜀")
+                build_progress.item_failed(payload.pNo, t, "데모에는 미리 만든 결과가 없습니다")
+                continue
             if cached:
                 logger.info(f"[editor.build] {t}: 같은 베이스로 만든 결과 재사용")
                 if t in POHS_TYPES:
@@ -558,7 +566,7 @@ def build_editor_templates(payload: EditorBuildRequest):
         from app.service.editor.make_before_edtior import run as run_before_editor
         # 영상만 고르면 에디터 이미지 폴더가 만들어지지 않으므로 빈 폴더를 준비한다 (그러면 글자 지우기는 건너뛴다)
         os.makedirs(os.path.join(str(EDITOR_ROOT_DIR), str(run_id), "before_image"), exist_ok=True)
-        run_before_editor(run_id=run_id)
+        run_before_editor(run_id=run_id, allow_paid=not payload.demo)
 
         # -------------------------------------------------------
         # 4) total.json 생성 (템플릿 + 파생물 append)

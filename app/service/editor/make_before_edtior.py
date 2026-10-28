@@ -238,6 +238,7 @@ def process_poster(
     image_path: str,
     editor_run_root: str,
     type_name: str,
+    allow_paid: bool = True,
 ) -> Dict[str, str]:
     """
     before_image 안에 있는 한 장의 이미지를 받아서
@@ -250,7 +251,14 @@ def process_poster(
 
     cleaned_path = os.path.join(clean_dir, f"{type_name}.png")
 
-    remove_text(image_path, cleaned_path)
+    # 재사용한 결과는 지운 이미지도 함께 복사되어 있다 (유료 편집을 다시 하지 않는다)
+    if os.path.exists(cleaned_path):
+        print(f"[RUN] clean 이미지 재사용: {cleaned_path}")
+    elif allow_paid:
+        remove_text(image_path, cleaned_path)
+    else:
+        # 데모: 새로 지우지 않는다 (clean 이 없으면 레이아웃에서 빠진다)
+        print(f"[RUN] 데모라 글자 지우기를 건너뜀: {type_name}")
 
     return {
         "type": type_name,
@@ -265,6 +273,7 @@ def process_poster(
 def run(
     run_id: int,
     editor_root: str = EDITOR_ROOT_DIR,
+    allow_paid: bool = True,
 ) -> Dict[str, Dict[str, str]]:
     """
     주어진 run_id에 대해:
@@ -323,6 +332,7 @@ def run(
             image_path=image_path,
             editor_run_root=editor_run_root,
             type_name=type_name,
+            allow_paid=allow_paid,
         )
 
         results[type_name] = result_paths

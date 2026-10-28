@@ -69,11 +69,21 @@ def find(p_no: int, t: str, base_url: Optional[str]) -> Optional[dict]:
     return entry
 
 
+def find_any(p_no: int, t: str) -> Optional[dict]:
+    """데모용: 베이스와 상관없이 이 프로젝트에서 이미 만든 결과가 있으면 돌려준다."""
+    with _lock:
+        entry = _load(p_no).get(t)
+    if not entry:
+        return None
+    return find(p_no, t, "/data/promotion/" + (entry.get("base") or ""))
+
+
 def reuse_pohs(entry: dict, t: str, run_id: int) -> None:
     """이전 실행 폴더의 현수막·광고 결과를 새 실행 폴더로 복사한다."""
     src = Path(EDITOR_ROOT_DIR) / str(entry["run_id"])
     dst = Path(EDITOR_ROOT_DIR) / str(run_id)
-    for sub, ext in (("before_image", "png"), ("before_data", "json")):
+    # clean(글자 지운 이미지)도 복사해 다음 단계에서 유료 편집을 다시 하지 않게 한다
+    for sub, ext in (("before_image", "png"), ("before_data", "json"), ("clean", "png")):
         s = src / sub / f"{t}.{ext}"
         if s.exists():
             (dst / sub).mkdir(parents=True, exist_ok=True)
