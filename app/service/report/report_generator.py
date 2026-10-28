@@ -14,6 +14,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
     당신은 30년 경력의 베테랑 홍보 담당관이자 편집장입니다.
     주어진 정보를 바탕으로 요청된 형식의 홍보 콘텐츠를 작성해야 합니다.
     반드시 **JSON 포맷**으로만 응답하세요. Markdown이나 기타 텍스트를 포함하지 마십시오.
+    문의처·담당부서·전화번호는 [축제 정보]에 있는 값만 쓰고, 없으면 빈 문자열("")로 두세요. 임의로 지어내지 마십시오.
     """
 
     info_text = f"""
@@ -24,7 +25,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
     - 주최/주관: {metadata.get('host', '주최 미정')}
     - 주요 프로그램: {metadata.get('programs', '프로그램 미정')}
     - 기획 의도: {metadata.get('concept', '')}
-    - 문의: {metadata.get('contact', '문화관광과')}
+    - 문의: {metadata.get('contact') or '(없음)'}
     """
 
     user_prompt = ""
@@ -52,7 +53,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
                 "date": "{metadata.get('date')}",
                 "location": "{metadata.get('location')}",
                 "program": "주요 프로그램 나열",
-                "contact": "{metadata.get('contact')}"
+                "contact": "{metadata.get('contact') or ''}"
             }},
             "sidebar": {{
                 "posters": [
@@ -79,7 +80,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
             "meta": {{
                 "no": "거제시 공고 제2025-0000호",
                 "date": "2025.05.XX",
-                "dept": "문화관광과"
+                "dept": "{metadata.get('host') or ''}"
             }},
             "body": "공고문 본문 (HTML <p>, <br> 태그 사용. 격식 있는 어조. 행사 개요 포함)",
             "attachments": [
