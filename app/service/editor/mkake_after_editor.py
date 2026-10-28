@@ -19,8 +19,8 @@ def build_total_layout(
     clean_dir = run_dir / "clean"
     layout_dir = run_dir / "layout"
 
-    if not before_dir.is_dir():
-        raise FileNotFoundError(f"before_data dir not found: {before_dir}")
+    # 영상만 고른 빌드처럼 에디터 이미지가 하나도 없으면 폴더가 없다. 빈 레이아웃으로 처리한다
+    before_dir.mkdir(parents=True, exist_ok=True)
 
     if not LAYOUT_TEMPLATES_DIR.is_dir():
         raise FileNotFoundError(f"layout_templates dir not found: {LAYOUT_TEMPLATES_DIR}")
@@ -39,7 +39,8 @@ def build_total_layout(
         print(f"[LAYOUT] no before_data json found in {before_dir}")
         total_path = layout_dir / "total.json"
         total_path.write_text("[]", encoding="utf-8")
-        return []
+        # 빈 경우도 경로를 돌려준다 (호출부가 이 파일에 영상 등 다른 결과를 덧붙인다)
+        return str(total_path.resolve())
 
     for meta_path in json_files:
         with meta_path.open("r", encoding="utf-8") as f:

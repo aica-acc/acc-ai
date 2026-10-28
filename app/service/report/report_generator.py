@@ -14,6 +14,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
     당신은 30년 경력의 베테랑 홍보 담당관이자 편집장입니다.
     주어진 정보를 바탕으로 요청된 형식의 홍보 콘텐츠를 작성해야 합니다.
     반드시 **JSON 포맷**으로만 응답하세요. Markdown이나 기타 텍스트를 포함하지 마십시오.
+    문의처·담당부서·전화번호는 [축제 정보]에 있는 값만 쓰고, 없으면 빈 문자열("")로 두세요. 임의로 지어내지 마십시오.
     """
 
     info_text = f"""
@@ -24,7 +25,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
     - 주최/주관: {metadata.get('host', '주최 미정')}
     - 주요 프로그램: {metadata.get('programs', '프로그램 미정')}
     - 기획 의도: {metadata.get('concept', '')}
-    - 문의: {metadata.get('contact', '문화관광과')}
+    - 문의: {metadata.get('contact') or '(없음)'}
     """
 
     user_prompt = ""
@@ -52,7 +53,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
                 "date": "{metadata.get('date')}",
                 "location": "{metadata.get('location')}",
                 "program": "주요 프로그램 나열",
-                "contact": "{metadata.get('contact')}"
+                "contact": "{metadata.get('contact') or ''}"
             }},
             "sidebar": {{
                 "posters": [
@@ -79,7 +80,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
             "meta": {{
                 "no": "거제시 공고 제2025-0000호",
                 "date": "2025.05.XX",
-                "dept": "문화관광과"
+                "dept": "{metadata.get('host') or ''}"
             }},
             "body": "공고문 본문 (HTML <p>, <br> 태그 사용. 격식 있는 어조. 행사 개요 포함)",
             "attachments": [
@@ -134,8 +135,10 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
         """
 
     elif report_type == "package":
-        # 자바에서 보낸 실제 경로 받기 (없으면 기본값)
-        real_poster_path = metadata.get('poster_image', 'poster_main.jpg')
+        # 패키지 안의 파일 이름은 화면에 그대로 보이므로 서버 경로가 아니라 표시용 이름을 쓴다 (확장자만 실제 파일을 따른다)
+        poster_src = str(metadata.get('poster_image') or '')
+        ext = os.path.splitext(poster_src.split('?')[0])[1].lower()
+        real_poster_path = "메인포스터" + (ext if ext in ('.png', '.jpg', '.jpeg', '.webp') else '.png')
         
         user_prompt = f"""
         {info_text}
@@ -175,7 +178,7 @@ def generate_report_text(report_type: str, metadata: dict) -> str:
         # 에러 발생 시에도 프론트가 죽지 않게 최소한의 JSON 반환
         error_json = {
             "title": "생성 오류",
-            "body": f"<p>죄송합니다. 글을 작성하는 중에 문제가 발생했습니다. ({str(e)})</p>",
+            "body": "<p>죄송합니다. 글을 작성하는 중에 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.</p>",
             "summary": [],
             "info": {},
             "sidebar": {"posters": [], "links": []}

@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import json
 import os
+from app.core import request_member
 import re
 import sys
 import time
@@ -614,7 +615,7 @@ def run_logo_illustration_to_editor(
     )
 
     # 2) 저장 디렉터리: FRONT_PROJECT_ROOT/public/data/promotion/<member_no>/<p_no>/logo
-    member_no = os.getenv("ACC_MEMBER_NO", "M000001")
+    member_no = request_member.member_no()
     logo_dir = (
         FRONT_PROJECT_ROOT
         / "public"
