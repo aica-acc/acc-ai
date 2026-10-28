@@ -27,7 +27,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ...
 FRONT_PROJECT_ROOT = os.getenv("FRONT_PROJECT_ROOT")
 ...
-PROMOTION_CODE = "M000001"  # 고정값
+from app.core import request_member  # 회원 폴더는 요청마다 (request_member)
 
 load_dotenv()
 
@@ -55,161 +55,17 @@ if not FRONT_PROJECT_ROOT:
     raise ValueError("FRONT_PROJECT_ROOT 가 .env에 설정되어 있지 않습니다.")
 
 
-veo_client = genai.Client(api_key=GEMINI_API_KEY)
 openai_client = OpenAI()
-VEO_MODEL = "veo-3.1-generate-preview"
 
 
 # --------------------------------------------------
-# Veo 헬퍼 (기존 로직 그대로 유지)
+# 영상 생성 (Veo 종료로 공용 모듈로 옮김: VIDEO_PROVIDER=seedance|omni)
 # --------------------------------------------------
-def wait_for_operation(operation):
-    """비동기 작업이 완료될 때까지 기다리는 헬퍼 함수"""
-    while not operation.done:
-        print("⏳ 비디오 생성 대기 중... (10초 후 재확인)")
-        time.sleep(10)
-        operation = veo_client.operations.get(operation)
-
-    if operation.error:
-        print(f"❌ 비디오 생성 실패: {operation.error}")
-        return None
-    else:
-        video_result = operation.result.generated_videos[0]
-        video_uri = video_result.video.uri
-        print(f"✅ 비디오 생성 완료! 결과 URI: {video_uri}")
-        return video_result
-
-
-def download_video(video_file, output_filename: str) -> Optional[Path]:
-    """
-    requests 라이브러리를 사용하여 비디오 URI에서 직접 다운로드합니다.
-    """
-    DOWNLOAD_DIR = Path("generated_videos")
-    DOWNLOAD_DIR.mkdir(exist_ok=True)
-
-    output_path = DOWNLOAD_DIR / output_filename
-    video_uri = video_file.video.uri
-
-    download_url = f"{video_uri}&key={GEMINI_API_KEY}" if "key=" not in video_uri else video_uri
-
-    try:
-        response = requests.get(download_url, stream=True)
-        response.raise_for_status()
-
-        with open(output_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-
-        print(f"⬇️ 비디오 다운로드 완료: {output_path.resolve()}")
-        return output_path
-    except Exception as e:
-        print(f"❌ 비디오 다운로드 실패 (requests 오류): {e}")
-        return None
-
-
-def _read_and_encode_image(image_path: str) -> types.Image:
-    """로컬 이미지를 읽어 Base64로 인코딩하고 types.Image 객체로 반환합니다."""
-    image_path = Path(image_path)
-    if not image_path.exists():
-        raise FileNotFoundError(f"이미지 파일이 존재하지 않습니다: {image_path}")
-
-    mime_type = "image/jpeg"
-    if image_path.suffix.lower() == ".png":
-        mime_type = "image/png"
-
-    with open(image_path, "rb") as f:
-        image_bytes = f.read()
-
-    base64_encoded_data = base64.b64encode(image_bytes).decode("utf-8")
-
-    return types.Image(
-        image_bytes=base64_encoded_data,
-        mime_type=mime_type,
-    )
-
-
-def generate_image_to_video(
-    prompt: str,
-    start_image_path: str,
-    end_image_path: str = None,
-    download_name: str = "image_to_video.mp4",
-) -> Tuple[Optional[Any], Optional[Path]]:
-    """
-    Veo 3.1을 사용하여 이미지 기반 비디오를 생성하고 다운로드합니다.
-    """
-    print(f"\n--- 1. Image to Video 시작 (프롬프트: {prompt[:60]}...) ---")
-
-    try:
-        start_frame_image = _read_and_encode_image(start_image_path)
-        print(f"✅ 시작 이미지 Base64 인코딩 완료: {start_image_path}")
-
-        last_frame_image = None
-        if end_image_path:
-            last_frame_image = _read_and_encode_image(end_image_path)
-            print(f"✅ 끝 이미지 Base64 인코딩 완료: {end_image_path}")
-    except FileNotFoundError as e:
-        print(f"❌ 파일 처리 중 오류 발생: {e}")
-        return None, None
-    except Exception as e:
-        print(f"❌ 이미지 인코딩 중 오류 발생: {e}")
-        return None, None
-
-    config_params = {}
-    if last_frame_image:
-        config_params["last_frame"] = last_frame_image
-
-    video_config = types.GenerateVideosConfig(**config_params) if config_params else None
-
-    operation = veo_client.models.generate_videos(
-        model=VEO_MODEL,
-        prompt=prompt,
-        image=start_frame_image,
-        config=video_config,
-    )
-
-    result_video = wait_for_operation(operation)
-
-    download_path = None
-    if result_video:
-        download_path = download_video(result_video, download_name)
-
-    return result_video, download_path
-
-
-def extend_video(
-    existing_video,
-    extension_prompt: str,
-    duration_s: int = 8,
-    download_name: str = "extended_video.mp4",
-) -> Tuple[Optional[Any], Optional[Path]]:
-    """
-    기존 Veo 비디오를 확장하여 새로운 클립을 생성하고 다운로드합니다.
-    """
-    if not existing_video:
-        print("❌ 확장할 기존 비디오가 없습니다. 이전 단계의 비디오 객체가 필요합니다.")
-        return None, None
-
-    print(f"\n--- 3. Extension (비디오 확장) 시작, 길이: {duration_s}s ---")
-    video_uri = existing_video.video.uri
-    print(f"기존 비디오 URI: {video_uri}")
-    print(f"확장 프롬프트: {extension_prompt[:80]}...")
-
-    video_config = types.GenerateVideosConfig()
-
-    operation = veo_client.models.generate_videos(
-        model=VEO_MODEL,
-        prompt=extension_prompt,
-        video=existing_video.video,
-        config=video_config,
-    )
-
-    result_video = wait_for_operation(operation)
-
-    download_path = None
-    if result_video:
-        download_path = download_video(result_video, download_name)
-
-    return result_video, download_path
+from app.service.video.video_gen import (  # noqa: E402
+    extend_video,
+    generate_image_to_video,
+    generate_text_to_video,
+)
 
 
 def concatenate_videos(input_paths: list[Path], output_filename: str) -> Optional[Path]:
@@ -427,7 +283,11 @@ def concat_intro_and_main(
         "ffmpeg",
         "-i", str(intro_path),
         "-i", str(main_path),
-        "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[v]",
+        # 인트로(30fps)와 본편의 fps·timebase 가 다르면 concat 이 끝나지 않고 출력이 계속 커진다. 둘 다 30fps 로 맞춘다
+        "-filter_complex",
+        "[0:v]fps=30,format=yuv420p,setsar=1,settb=AVTB,setpts=PTS-STARTPTS[a];"
+        "[1:v]fps=30,format=yuv420p,setsar=1,settb=AVTB,setpts=PTS-STARTPTS[b];"
+        "[a][b]concat=n=2:v=1:a=0[v]",
         "-map", "[v]",
         "-map", "1:a?",   # 본편에 오디오 있으면 복사, 없으면 무시
         "-c:v", "libx264",
@@ -825,7 +685,7 @@ def run_mascot_video_to_editor(
     #   그 앞에 2초 인트로(검정 배경 + 축제명/기간)를 붙인다.
 
     if not path_2:
-        raise RuntimeError("Veo 확장 비디오(segment_2)가 생성되지 않았습니다.")
+        raise RuntimeError("이어 붙인 영상(segment_2)이 생성되지 않았습니다.")
 
     main_video_path = path_2  # ← Veo 두 번째 결과를 최종 본편으로 사용
 
@@ -861,7 +721,7 @@ def run_mascot_video_to_editor(
     # 6. FRONT public/data/promotion/M000001/{pNo}/video/poster_video.mp4 로 이동
     front_root = Path(FRONT_PROJECT_ROOT)
     public_root = front_root / "public"
-    rel_dir = Path("data") / "promotion" / PROMOTION_CODE / pNo / "video"
+    rel_dir = Path("data") / "promotion" / request_member.member_no() / pNo / "video"
     target_dir = public_root / rel_dir
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -869,7 +729,7 @@ def run_mascot_video_to_editor(
     shutil.move(str(final_temp), target_path)
     print(f"✅ 최종 포스터 홍보 영상 저장: {target_path}")
 
-    db_rel_path = (Path("data") / "promotion" / PROMOTION_CODE / pNo / "video" / "mascot_video.mp4").as_posix()
+    db_rel_path = (Path("data") / "promotion" / request_member.member_no() / pNo / "video" / "mascot_video.mp4").as_posix()
 
     result: Dict[str, Any] = {
         "db_file_type": "mascot_video",

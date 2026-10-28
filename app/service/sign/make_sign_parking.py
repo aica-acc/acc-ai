@@ -37,6 +37,7 @@ DB 저장용 리턴 예시:
 from __future__ import annotations
 
 import os
+from app.core import request_member
 import re
 import sys
 import time
@@ -527,7 +528,7 @@ def run_sign_parking_to_editor(
     _log_progress("▶ 2단계: 저장 디렉터리 생성/확인 중...")
 
     # 2) 저장 디렉터리: FRONT_PROJECT_ROOT/public/data/promotion/<member_no>/<p_no>/sign
-    member_no = os.getenv("ACC_MEMBER_NO", "M000001")
+    member_no = request_member.member_no()
     sign_dir = (
         FRONT_PROJECT_ROOT
         / "public"

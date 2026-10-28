@@ -18,7 +18,7 @@ load_dotenv()
 # --------------------------------------------------
 PROJECT_ROOT = os.getenv("PROJECT_ROOT")
 FRONT_PROJECT_ROOT = os.getenv("FRONT_PROJECT_ROOT")
-PROMOTION_CODE = "M000001"
+from app.core import request_member  # 회원 폴더는 요청마다 (request_member)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
@@ -425,7 +425,7 @@ def run_poster_cardnews_to_editor(
     # 4. FRONT public/data/... 로 이동
     front_root = Path(FRONT_PROJECT_ROOT)
     public_root = front_root / "public"
-    rel_dir = Path("data") / "promotion" / PROMOTION_CODE / pNo / "poster_cardnews"
+    rel_dir = Path("data") / "promotion" / request_member.member_no() / pNo / "poster_cardnews"
     target_dir = public_root / rel_dir
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -434,7 +434,7 @@ def run_poster_cardnews_to_editor(
     print(f"✅ 최종 리플렛 이미지 저장: {target_path}")
 
     db_rel_path = (
-        Path("data") / "promotion" / PROMOTION_CODE / pNo / "poster_cardnews" / "poster_cardnews_nano.png"
+        Path("data") / "promotion" / request_member.member_no() / pNo / "poster_cardnews" / "poster_cardnews_nano.png"
     ).as_posix()
 
     result: Dict[str, Any] = {

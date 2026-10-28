@@ -35,7 +35,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ...
 FRONT_PROJECT_ROOT = os.getenv("FRONT_PROJECT_ROOT")
 ...
-PROMOTION_CODE = "M000001"  # 고정값
+from app.core import request_member
 
 PROJECT_ROOT = os.getenv("PROJECT_ROOT")
 if not PROJECT_ROOT:
@@ -56,7 +56,6 @@ if not FRONT_PROJECT_ROOT:
     raise ValueError("FRONT_PROJECT_ROOT 가 .env에 설정되어 있지 않습니다.")
 
 api_key = os.getenv("GEMINI_API_KEY")
-veo_client = genai.Client(api_key=GEMINI_API_KEY)
 openai_client = OpenAI()
 
 #이건 바꿔야함 
@@ -64,8 +63,6 @@ test_layout_image_url = "data/promotion/M000001/25/poster/good_2.jpg"
 card_layout_image_url = "data/promotion/M000001/25/poster/card.png"
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 # 환경설정 모델들
-VEO_MODEL = "veo-3.1-generate-preview"
-MODEL = "veo-3.1-generate-preview" # Veo 3.1 모델 이름
 # ============================================================
 # 0. 환경설정 및 PATH
 # ============================================================
@@ -170,6 +167,8 @@ class PosterIn(BaseModel):
 class EditorBuildRequest(BaseModel):
     pNo: int
     posters: List[PosterIn]
+    # 데모(test 계정): 이미 만든 결과만 쓰고 새로 생성하지 않는다 (백엔드가 정한다)
+    demo: bool = False
 
 
 class PythonBuildResponse(BaseModel):
@@ -391,6 +390,8 @@ def build_editor_templates(payload: EditorBuildRequest):
         festival_location_ko = payload_data.location
         poster_image_url = payload_data.posterImageUrl
         mascot_image_url = getattr(payload_data, "mascotImageUrl", None)
+        # 파생물은 베이스와 같은 회원 폴더에 저장한다 (예전: 모두 M000001)
+        request_member.use_member_from_path(poster_image_url, mascot_image_url)
         concept_description = payload_data.conceptDescription
         program_name = payload_data.programName
 
@@ -416,7 +417,13 @@ def build_editor_templates(payload: EditorBuildRequest):
             # 같은 베이스로 이미 만든 유형은 다시 생성하지 않는다 (derivative_cache)
             base_url = mascot_image_url if t in (MSHS_TYPES | MASCOT_VIDEO_TYPES) else poster_image_url
             cached = derivative_cache.find(payload.pNo, t, base_url)
+            if not cached and payload.demo:
+                cached = derivative_cache.find_any(payload.pNo, t)
             result = None
+            if not cached and payload.demo:
+                logger.info(f"[editor.build] 데모: {t} 는 미리 만든 결과가 없어 건너뜀")
+                build_progress.item_failed(payload.pNo, t, "데모에는 미리 만든 결과가 없습니다")
+                continue
             if cached:
                 logger.info(f"[editor.build] {t}: 같은 베이스로 만든 결과 재사용")
                 if t in POHS_TYPES:
@@ -557,7 +564,9 @@ def build_editor_templates(payload: EditorBuildRequest):
         # -------------------------------------------------------
         build_progress.phase(payload.pNo, "글자 지우기")
         from app.service.editor.make_before_edtior import run as run_before_editor
-        run_before_editor(run_id=run_id)
+        # 영상만 고르면 에디터 이미지 폴더가 만들어지지 않으므로 빈 폴더를 준비한다 (그러면 글자 지우기는 건너뛴다)
+        os.makedirs(os.path.join(str(EDITOR_ROOT_DIR), str(run_id), "before_image"), exist_ok=True)
+        run_before_editor(run_id=run_id, allow_paid=not payload.demo)
 
         # -------------------------------------------------------
         # 4) total.json 생성 (템플릿 + 파생물 append)
