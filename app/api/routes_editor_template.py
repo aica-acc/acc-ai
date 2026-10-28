@@ -556,6 +556,8 @@ def build_editor_templates(payload: EditorBuildRequest):
         # -------------------------------------------------------
         build_progress.phase(payload.pNo, "글자 지우기")
         from app.service.editor.make_before_edtior import run as run_before_editor
+        # 영상만 고르면 에디터 이미지 폴더가 만들어지지 않으므로 빈 폴더를 준비한다 (그러면 글자 지우기는 건너뛴다)
+        os.makedirs(os.path.join(str(EDITOR_ROOT_DIR), str(run_id), "before_image"), exist_ok=True)
         run_before_editor(run_id=run_id)
 
         # -------------------------------------------------------
