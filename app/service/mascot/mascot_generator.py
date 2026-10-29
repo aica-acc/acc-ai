@@ -1,12 +1,14 @@
 import os
-import time
 import json
 from dotenv import load_dotenv
 
 from app.service.mascot.mascot_prompt_graph import run_mascot_prompt_pipeline
 from app.service.mascot.mascot_image_graph import run_mascot_image_pipeline
 
+from pathlib import Path
+
 from app.core.config import PROMOTION_DIR
+from app.core.batch import batch_dir, result_name
 
 load_dotenv()
 
@@ -16,16 +18,8 @@ SAVE_DIR = str(PROMOTION_DIR / "mascot")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 # 한 장이 실패했을 때 순서대로 재시도할 모델
-FALLBACK_MODELS = ["recraft", "sd3"]
+FALLBACK_MODELS = ["recraft", "imagen"]
 
-
-def _remove_files(paths):
-    for p in paths:
-        try:
-            if p and os.path.exists(p):
-                os.remove(p)
-        except OSError as e:
-            print(f"[mascot_generator] 파일 삭제 실패: {p} ({e})")
 
 def create_mascot_prompt(user_theme, analysis_summary, poster_trend_report, strategy_report):
     provided_context = f"""
@@ -45,13 +39,15 @@ def create_mascot_prompt(user_theme, analysis_summary, poster_trend_report, stra
     
     return result
 
-def create_mascot_images(prompt_options):
+def create_mascot_images(prompt_options, batch=None):
     """
-    Fail-Fast:
-    - 하나라도 실패하거나
-    - image_url/file_name/file_path/visual_prompt 중 하나라도 None이면
-    → 즉시 종료 + status="error"
+    결과는 {SAVE_DIR}/{batch}/mascot_{순번}_{프롬프트 해시}.png. 같은 파일이 있으면 다시 만들지 않는다 (#31).
+
+    한 장이 실패해도 나머지는 끝까지 만들고, 실패 목록과 함께 status="error" 를 돌려준다.
+    성공한 장은 폴더에 남겨 다시 요청하면 실패한 장만 만든다.
+    (예전에는 첫 실패에서 멈추고 만든 파일을 모두 지웠다. 백엔드가 "폴더에 남은 4장"을 다른 프로젝트에 재사용할 수 있어서였다)
     """
+    save_dir = batch_dir(Path(SAVE_DIR), batch)
     REQUIRED_KEYS = ["image_url", "file_name", "file_path", "visual_prompt"]
 
     print("===================================================")
@@ -60,6 +56,7 @@ def create_mascot_images(prompt_options):
     print("===================================================")
 
     results = []
+    failed = []
 
     for i, opt in enumerate(prompt_options):
         style = opt.style_name
@@ -68,17 +65,20 @@ def create_mascot_images(prompt_options):
         print(f"👉 [{i+1}/{len(prompt_options)}] 스타일 생성: {style}")
         print(f"[mascot_generator]   raw_prompt 길이 = {len(raw_prompt)}")
 
-        ts = int(time.time())
-        filename = f"mascot_{ts}_{i}.png"
-        filepath = os.path.join(SAVE_DIR, filename)
-        
+        filename = result_name("mascot", i, raw_prompt)
+        filepath = str(save_dir / filename)
+
         print(f"[mascot_generator]   저장 예정 파일경로 = {filepath}")
 
-        img = run_mascot_image_pipeline(
-            style_name=style,
-            raw_prompt=raw_prompt,
-            output_path=filepath,
-        )
+        if os.path.exists(filepath):
+            print(f"[mascot_generator]   ♻️ 이미 만든 이미지 사용: {filename}")
+            img = {"status": "success", "image_url": f"/poster-images/mascot/{filename}"}
+        else:
+            img = run_mascot_image_pipeline(
+                style_name=style,
+                raw_prompt=raw_prompt,
+                output_path=filepath,
+            )
 
         print("[mascot_generator]   run_mascot_image_pipeline 결과(raw) =")
         print(json.dumps(img, ensure_ascii=False, indent=2))
@@ -100,17 +100,14 @@ def create_mascot_images(prompt_options):
                 if img.get("status") == "success":
                     break
 
-        # 재시도까지 실패: 이번 요청에서 만든 파일을 지워 다음 생성에 섞이지 않게 한다
-        # (백엔드는 AI 폴더에 남은 이미지를 '생성 후 저장 실패분'으로 보고 재사용한다)
+        # 재시도까지 실패: 이 장만 실패로 기록하고 나머지는 계속 만든다
         if img.get("status") != "success":
-            msg = img.get("message") or "IMAGE_PIPELINE_FAILED"
-            print(f"[mascot_generator] ❌ pipeline 실패: {msg} ({img.get('error')})")
-            _remove_files([r["file_path"] for r in results] + [filepath])
-            return {
-                "status": "error",
-                "error": msg,
-                "failed_style": style,
-            }
+            msg = img.get("message") or img.get("error") or "IMAGE_PIPELINE_FAILED"
+            print(f"[mascot_generator] ❌ pipeline 실패: {msg}")
+            if os.path.exists(filepath):
+                os.remove(filepath)  # 반쯤 쓰인 파일이 다음 요청에서 성공분으로 보이지 않게
+            failed.append({"index": i, "style_name": style, "error": str(msg)})
+            continue
 
         print("===== VISUAL PROMPT DEBUG =====")
         print(f"raw_prompt: {raw_prompt!r}")
@@ -140,10 +137,12 @@ def create_mascot_images(prompt_options):
 
         results.append(rec)
 
-    if not results:
+    if failed or not results:
         return {
             "status": "error",
-            "error": "NO_IMAGES_GENERATED",
+            "error": f"마스코트 {len(failed)}/{len(prompt_options)}장 생성 실패" if failed else "NO_IMAGES_GENERATED",
+            "failed": failed,
+            "succeeded": [r["file_name"] for r in results],
         }
 
     return {

@@ -143,10 +143,6 @@ async def analyze_region_trend(
         }
         
     except Exception as e:
+        # 예전에는 빈 데이터를 200 으로 돌려줘 백엔드가 성공으로 보고 크레딧도 환불하지 않았다 (#31)
         print("❌ Region trend analysis failed:", e)
-        return {
-            "status": "error", 
-            "message": str(e),
-            "region_trend": [], 
-            "growth_stats": {"festival_growth": 0, "region_growth": 0}
-        }
+        raise HTTPException(status_code=502, detail="region trend analysis failed")

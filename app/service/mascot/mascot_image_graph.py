@@ -6,8 +6,8 @@ from langchain_openai import ChatOpenAI
 
 from app.service.mascot.model_engines import (
     run_flux,
-    run_pixart,
-    run_sd3,
+    run_ideogram,
+    run_imagen,
     run_recraft,
 )
 
@@ -77,7 +77,7 @@ MODEL_STYLE_REFERENCES = {
         "minimal line illustration cute mascot",
     ],
 
-    "pixart": [
+    "ideogram": [
         "glossy cute sticker mascot",
         "round chubby colorful emoji style",
         "creamy pastel sticker character",
@@ -85,7 +85,7 @@ MODEL_STYLE_REFERENCES = {
         "mobile app sticker style mascot",
     ],
 
-    "sd3": [
+    "imagen": [
         "pastel anime chibi mascot",
         "korean cute illustration",
         "soft dreamy children character",
@@ -193,12 +193,12 @@ def node_generate_image(state: MascotImageState):
     if model == "flux":
         print("=== [FLUX] 모델 호출 ===")
         result = run_flux(prompt, out_path)
-    elif model == "pixart":
-        print("=== [PIXART] 모델 호출 ===")
-        result = run_pixart(prompt, out_path)
-    elif model == "sd3":
-        print("=== [SD3] 모델 호출 ===")
-        result = run_sd3(prompt, out_path)
+    elif model == "ideogram":
+        print("=== [IDEOGRAM] 모델 호출 ===")
+        result = run_ideogram(prompt, out_path)
+    elif model == "imagen":
+        print("=== [IMAGEN] 모델 호출 ===")
+        result = run_imagen(prompt, out_path)
     elif model == "recraft":
         print("=== [RECRAFT] 모델 호출 ===")
         result = run_recraft(prompt, out_path)

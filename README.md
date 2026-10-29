@@ -19,7 +19,7 @@ ACC(축제 홍보물 자동생성 서비스)의 **AI 서버**입니다. FastAPI 
 | 트렌드 분석 | 키워드·지역 트렌드 (네이버 데이터랩, YouTube, SerpAPI 크롤링) (`/analyze/total_trend`, `/region_trend`) |
 | 프롬프트 · 이미지 생성 | LangChain / LangGraph + OpenAI·Replicate·Gemini 로 포스터·마스코트 생성 (`/generate-prompt`, `/create-image`) |
 | 파생 홍보물 | 현수막·버스/지하철 광고·카드뉴스·리플렛·굿즈·표지판·로고 생성 |
-| 영상 | 포스터/마스코트/축제 홍보영상 (Gemini Veo, ffmpeg, moviepy) |
+| 영상 | 포스터/마스코트/축제 홍보영상 (`VIDEO_PROVIDER`: Replicate Seedance 기본, Gemini Omni 선택. ffmpeg, moviepy) |
 | 에디터 | 레이아웃 템플릿 생성, 텍스트 OCR(PaddleOCR), AI 색상·폰트 추천 (`/editor/*`) |
 | 리포트 | 보도자료·공지·SNS 글·패키지 생성 (`/report/*`) |
 
@@ -67,7 +67,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
 | 변수 | 용도 |
 |---|---|
 | `OPENAI_API_KEY` | LLM / 이미지 분석 |
-| `GEMINI_API_KEY` | Gemini / 영상 생성 |
+| `GEMINI_API_KEY` | (선택) 글자 지우기 `TEXT_REMOVAL_PROVIDER=gemini`, 영상 `VIDEO_PROVIDER=omni` 일 때만 |
 | `REPLICATE_API_TOKEN` | 이미지 생성 (Replicate) |
 | `CLIPDROP_API_KEY` | 이미지 텍스트 제거 |
 | `YOUTUBE_API_KEY` | YouTube 트렌드 (**기동 시 필요**) |
@@ -76,7 +76,8 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
 | `PINECONE_API_KEY`, `HUGGING_FACE_TOKEN`, `TAVILY_API_KEY` | 벡터DB / 모델 / 검색 |
 | `CLOUDCONVERT_API_KEY` | HWP 기획서를 PDF 로 변환 |
 | `PROJECT_ROOT` | 이 레포 루트 경로 (**필수**) |
-| `FRONT_PROJECT_ROOT` | `acc-front` 레포 루트 경로 (**필수**). 하위 `public/data/promotion/...` 에 결과물 저장 |
+| `FRONT_PROJECT_ROOT` | 생성물 저장 루트 (**필수**, 로컬 기본 `../data/local`). 하위 `public/data/promotion/...` 에 저장. 이름과 달리 프론트 레포가 아니어도 된다 (브라우저는 백엔드 `/files/` 로만 받음) |
+| `FILES_MODE` | `shared`(기본): 백엔드와 같은 폴더. `http`: 자기 폴더를 쓰고 백엔드 `/internal/files` 로 받고 보냄 (`BACKEND_INTERNAL_URL`, `INTERNAL_TOKEN`) |
 | `FILE_ROOT` | 파일 공유 루트 |
 | `DATA_ROOT`, `EDITOR_ROOT_DIR`, `PROMOTION_DIR`, `BANNER_SAVE_DIR` | (선택) 데이터·에디터·생성물·배너 저장 폴더. 비우면 레포 기준 상대 위치 |
 | `AI_PUBLIC_BASE_URL` | 응답에 넣는 정적 파일 URL의 공개 주소. 브라우저는 백엔드의 `/static/**` 중계를 거치므로 기본값은 백엔드 주소(`http://127.0.0.1:8081`). 도메인으로 서비스하면 사용자가 접속하는 주소 |
