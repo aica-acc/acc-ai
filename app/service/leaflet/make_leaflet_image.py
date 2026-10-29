@@ -19,6 +19,7 @@ load_dotenv()
 PROJECT_ROOT = os.getenv("PROJECT_ROOT")
 FRONT_PROJECT_ROOT = os.getenv("FRONT_PROJECT_ROOT")
 from app.core import request_member  # 회원 폴더는 요청마다 (request_member)
+from app.core import shared_files
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
@@ -243,11 +244,11 @@ def _resolve_front_asset(path_or_url: str, project_id: str | int) -> Path:
     if as_is.is_absolute() and as_is.exists():
         return as_is
 
-    # 로컬 (FRONT public 기준)
+    # 로컬 (FRONT public 기준). FILES_MODE=http 면 없을 때 백엔드에서 받아 온다 (few-shot 레이아웃 등, #33)
     front_root = Path(FRONT_PROJECT_ROOT)
     public_root = front_root / "public"
     rel = path_or_url.lstrip("/")
-    return public_root / rel
+    return Path(shared_files.fetch(str(public_root / rel)))
 
 
 # --------------------------------------------------

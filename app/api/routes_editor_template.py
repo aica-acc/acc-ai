@@ -31,6 +31,7 @@ load_dotenv()
 FRONT_PROJECT_ROOT = os.getenv("FRONT_PROJECT_ROOT")
 ...
 from app.core import request_member
+from app.core import shared_files
 
 PROJECT_ROOT = os.getenv("PROJECT_ROOT")
 if not PROJECT_ROOT:
@@ -382,6 +383,10 @@ def build_editor_templates(payload: EditorBuildRequest):
         mascot_image_url = getattr(payload_data, "mascotImageUrl", None)
         # 파생물은 베이스와 같은 회원 폴더에 저장한다 (예전: 모두 M000001)
         request_member.use_member_from_path(poster_image_url, mascot_image_url)
+        # FILES_MODE=http 면 베이스 이미지를 백엔드에서 받아 이 서버 경로로 바꾼다 (#33). 캐시 키는 원래 경로로
+        poster_key, mascot_key = poster_image_url, mascot_image_url
+        poster_image_url = shared_files.fetch(poster_image_url)
+        mascot_image_url = shared_files.fetch(mascot_image_url)
         concept_description = payload_data.conceptDescription
         program_name = payload_data.programName
 
@@ -405,7 +410,7 @@ def build_editor_templates(payload: EditorBuildRequest):
                 continue
 
             # 같은 베이스로 이미 만든 유형은 다시 생성하지 않는다 (derivative_cache)
-            base_url = mascot_image_url if t in (MSHS_TYPES | MASCOT_VIDEO_TYPES) else poster_image_url
+            base_url = mascot_key if t in (MSHS_TYPES | MASCOT_VIDEO_TYPES) else poster_key
             cached = derivative_cache.find(payload.pNo, t, base_url)
             if not cached and payload.demo:
                 cached = derivative_cache.find_any(payload.pNo, t)
@@ -532,6 +537,8 @@ def build_editor_templates(payload: EditorBuildRequest):
                 db_file_type = result.get("db_file_type")
                 db_file_path = result.get("db_file_path")
                 if db_file_path:
+                    # 결과 파일을 백엔드로 (FILES_MODE=http 일 때만, 재사용한 결과도 백엔드에 없을 수 있어 다시 보낸다)
+                    shared_files.publish(db_file_path)
                     db_file_paths.append(db_file_path)
                     db_file_types.append(db_file_type)
                 
