@@ -19,7 +19,7 @@ ACC(축제 홍보물 자동생성 서비스)의 **AI 서버**입니다. FastAPI 
 | 트렌드 분석 | 키워드·지역 트렌드 (네이버 데이터랩, YouTube, SerpAPI 크롤링) (`/analyze/total_trend`, `/region_trend`) |
 | 프롬프트 · 이미지 생성 | LangChain / LangGraph + OpenAI·Replicate·Gemini 로 포스터·마스코트 생성 (`/generate-prompt`, `/create-image`) |
 | 파생 홍보물 | 현수막·버스/지하철 광고·카드뉴스·리플렛·굿즈·표지판·로고 생성 |
-| 영상 | 포스터/마스코트/축제 홍보영상 (Gemini Veo, ffmpeg, moviepy) |
+| 영상 | 포스터/마스코트/축제 홍보영상 (`VIDEO_PROVIDER`: Replicate Seedance 기본, Gemini Omni 선택. ffmpeg, moviepy) |
 | 에디터 | 레이아웃 템플릿 생성, 텍스트 OCR(PaddleOCR), AI 색상·폰트 추천 (`/editor/*`) |
 | 리포트 | 보도자료·공지·SNS 글·패키지 생성 (`/report/*`) |
 
@@ -67,7 +67,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
 | 변수 | 용도 |
 |---|---|
 | `OPENAI_API_KEY` | LLM / 이미지 분석 |
-| `GEMINI_API_KEY` | Gemini / 영상 생성 |
+| `GEMINI_API_KEY` | (선택) 글자 지우기 `TEXT_REMOVAL_PROVIDER=gemini`, 영상 `VIDEO_PROVIDER=omni` 일 때만 |
 | `REPLICATE_API_TOKEN` | 이미지 생성 (Replicate) |
 | `CLIPDROP_API_KEY` | 이미지 텍스트 제거 |
 | `YOUTUBE_API_KEY` | YouTube 트렌드 (**기동 시 필요**) |

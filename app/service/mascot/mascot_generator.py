@@ -16,7 +16,7 @@ SAVE_DIR = str(PROMOTION_DIR / "mascot")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 # 한 장이 실패했을 때 순서대로 재시도할 모델
-FALLBACK_MODELS = ["recraft", "sd3"]
+FALLBACK_MODELS = ["recraft", "imagen"]
 
 
 def _remove_files(paths):

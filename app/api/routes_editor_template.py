@@ -14,14 +14,11 @@ from pydantic import BaseModel
 
 import base64
 import requests 
-from google import genai
-from google.genai import types
 import subprocess # FFmpeg 호출을 위한 subprocess 모듈 추가
 
 import time
 import io
 import shutil
-from google.genai import types
 from PIL import Image
 
 
@@ -31,8 +28,6 @@ from PIL import Image
 # .env 파일에서 환경 변수를 로드합니다.
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-...
 FRONT_PROJECT_ROOT = os.getenv("FRONT_PROJECT_ROOT")
 ...
 from app.core import request_member
@@ -47,15 +42,10 @@ INTRO_FONT_PATH = PROJECT_ROOT / "app" / "fonts" / "Jalnan2TTF.ttf"
 if not INTRO_FONT_PATH.exists():
     raise FileNotFoundError(f"인트로 자막용 폰트 파일을 찾을 수 없습니다: {INTRO_FONT_PATH}")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY 가 .env에 설정되어 있지 않습니다.")
-
 FRONT_PROJECT_ROOT = os.getenv("FRONT_PROJECT_ROOT")
 if not FRONT_PROJECT_ROOT:
     raise ValueError("FRONT_PROJECT_ROOT 가 .env에 설정되어 있지 않습니다.")
 
-api_key = os.getenv("GEMINI_API_KEY")
 openai_client = OpenAI()
 
 #이건 바꿔야함 

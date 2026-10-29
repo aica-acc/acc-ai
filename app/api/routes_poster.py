@@ -3,7 +3,6 @@ import json
 import time
 from fastapi import APIRouter, Form, File, UploadFile, HTTPException
 from app.domain.poster import poster_model as models
-from app.service.poster import image_editor
 from pydantic import BaseModel
 from app.service.poster import image_generator
 
@@ -142,42 +141,4 @@ async def handle_image_creation(body: models.CreateImageRequest):
 
     except Exception as e:
         print(f"🚨 오류: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
-# [API 4] 최종 포스터 편집 (AI 수정)
-class EditPosterRequest(BaseModel):
-    image_filename: str
-    title_text: str
-    date_text: str
-    location_text: str  # <--- ⭐️ 여기가 핵심! (장소 입력칸 추가)
-
-@router.post("/finalize-poster")
-async def handle_finalize_poster(body: EditPosterRequest):
-    print("\n--- [FastAPI 서버] /finalize-poster (편집) 요청 수신 ---")
-    
-    target_path = os.path.join(SAVE_DIR, body.image_filename)
-    
-    if not os.path.exists(target_path):
-        raise HTTPException(status_code=404, detail="이미지 파일을 찾을 수 없습니다.")
-
-    try:
-        # ⭐️ 여기서 4개를 짝 맞춰서 던져줍니다!
-        final_path = image_editor.edit_image_process(
-            target_path, 
-            body.title_text,    # 제목
-            body.date_text,     # 날짜
-            body.location_text  # 장소 (추가됨)
-        )
-        
-        final_filename = os.path.basename(final_path)
-        
-        return {
-            "status": "success",
-            "original_image": body.image_filename,
-            "final_image_url": f"/poster-images/{final_filename}",
-            "message": "AI가 제목, 날짜, 장소를 새로 그렸습니다."
-        }
-        
-    except Exception as e:
-        print(f"🚨 편집 중 오류 발생: {e}")
         raise HTTPException(status_code=500, detail=str(e))
