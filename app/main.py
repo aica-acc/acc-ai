@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api import routes_liveposter
 from app.api import routes_region_trend
 from app.api import routes_report
+from app.api import routes_internal_files
 import os
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -41,6 +42,7 @@ app.include_router(routes_editor_render.router)
 app.include_router(routes_editor_template.router)
 app.include_router(routes_mascot.router)
 app.include_router(routes_report.router)
+app.include_router(routes_internal_files.router)
 
 # app/api/data 폴더를 /static 이라는 URL로 매핑
 app.mount(

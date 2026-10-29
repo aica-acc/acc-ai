@@ -11,8 +11,6 @@ from typing import Any, Dict, Optional, Tuple, List
 
 import requests
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
 from openai import OpenAI
 from PIL import Image
 import subprocess
@@ -23,8 +21,6 @@ load_dotenv()
 # --------------------------------------------------
 # 공통 설정
 # --------------------------------------------------
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-...
 FRONT_PROJECT_ROOT = os.getenv("FRONT_PROJECT_ROOT")
 ...
 from app.core import request_member  # 회원 폴더는 요청마다 (request_member)
@@ -45,9 +41,7 @@ INTRO_FONT_PATH = PROJECT_ROOT / "app" / "fonts" / "Jalnan2TTF.ttf"
 if not INTRO_FONT_PATH.exists():
     raise FileNotFoundError(f"인트로 자막용 폰트 파일을 찾을 수 없습니다: {INTRO_FONT_PATH}")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY 가 .env에 설정되어 있지 않습니다.")
+# GEMINI_API_KEY 는 VIDEO_PROVIDER=omni 일 때만 video_gen 이 확인한다 (Veo 종료)
 
 
 FRONT_PROJECT_ROOT = os.getenv("FRONT_PROJECT_ROOT")
