@@ -60,3 +60,5 @@ class CreateImageRequest(BaseModel):
     prompt_options: List[SelectedPromptData]
     analysis_summary: Dict[str, Any]
     image_url: Optional[str] = None
+    # 결과 폴더 키 (회원_프로젝트). 없으면 예전처럼 {type}/ 바로 아래 (app.core.batch)
+    batch: Optional[str] = None

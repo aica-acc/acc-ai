@@ -8,10 +8,12 @@ AI 컨테이너는 포트를 열지 않고, nginx·백엔드도 /internal 을 �
 """
 import re
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
+from app.core.batch import _BATCH
 from app.core.config import PROMOTION_DIR
 
 router = APIRouter(prefix="/internal/promotion", tags=["Internal Files"])
@@ -20,43 +22,67 @@ _KIND = re.compile(r"^[a-z_]+$")
 _NAME = re.compile(r"^[\w.\-]+$")
 
 
-def _dir(kind: str) -> Path:
+def _dir(kind: str, batch: Optional[str] = None) -> Path:
     if not _KIND.match(kind):
         raise HTTPException(status_code=400, detail="invalid kind")
-    return PROMOTION_DIR / kind
+    if batch is None:
+        return PROMOTION_DIR / kind
+    if not _BATCH.match(batch):
+        raise HTTPException(status_code=400, detail="invalid batch")
+    return PROMOTION_DIR / kind / batch
 
 
-def _file(kind: str, name: str) -> Path:
+def _file(kind: str, name: str, batch: Optional[str] = None) -> Path:
     if not _NAME.match(name) or name.startswith("."):
         raise HTTPException(status_code=400, detail="invalid name")
-    path = (_dir(kind) / name).resolve()
-    if path.parent != (PROMOTION_DIR / kind).resolve():
+    d = _dir(kind, batch).resolve()
+    path = (d / name).resolve()
+    if path.parent != d:
         raise HTTPException(status_code=400, detail="invalid name")
     return path
 
 
 @router.get("/{kind}")
-def list_files(kind: str, prefix: str = "", ext: str = ".png"):
-    """파일명 순으로 정렬한 목록 ({type}_{시각}_{순번}.png 라서 프롬프트 순서와 짝이 맞는다)"""
-    d = _dir(kind)
+def list_files(kind: str, prefix: str = "", ext: str = ".png", batch: Optional[str] = None):
+    """파일명 순 목록. batch 를 주면 그 요청 폴더({kind}/{batch}/)만 본다 (#31)"""
+    d = _dir(kind, batch)
     if not d.is_dir():
         return {"files": []}
     names = sorted(p.name for p in d.iterdir() if p.is_file() and p.name.startswith(prefix) and p.name.endswith(ext))
     return {"files": names}
 
 
-@router.get("/{kind}/{name}")
-def get_file(kind: str, name: str):
-    path = _file(kind, name)
+def _send(path: Path):
     if not path.is_file():
         raise HTTPException(status_code=404, detail="not found")
     return FileResponse(path)
 
 
-@router.delete("/{kind}/{name}")
-def delete_file(kind: str, name: str):
-    path = _file(kind, name)
+def _delete(path: Path):
     if not path.is_file():
         raise HTTPException(status_code=404, detail="not found")
     path.unlink()
-    return {"deleted": name}
+    # 다 옮긴 요청 폴더({kind}/{batch}/)는 비면 지운다
+    if path.parent != PROMOTION_DIR.resolve() and path.parent.parent != PROMOTION_DIR.resolve() and not any(path.parent.iterdir()):
+        path.parent.rmdir()
+    return {"deleted": path.name}
+
+
+@router.get("/{kind}/{name}")
+def get_file(kind: str, name: str):
+    return _send(_file(kind, name))
+
+
+@router.get("/{kind}/{batch}/{name}")
+def get_batch_file(kind: str, batch: str, name: str):
+    return _send(_file(kind, name, batch))
+
+
+@router.delete("/{kind}/{name}")
+def delete_file(kind: str, name: str):
+    return _delete(_file(kind, name))
+
+
+@router.delete("/{kind}/{batch}/{name}")
+def delete_batch_file(kind: str, batch: str, name: str):
+    return _delete(_file(kind, name, batch))
