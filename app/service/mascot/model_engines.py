@@ -17,17 +17,18 @@ if not REPLICATE_API_TOKEN:
 client = replicate.Client(api_token=REPLICATE_API_TOKEN)
 
 # ------------------------------------------------------------
-# 마스코트 모델 (2026-10 교체, 트러블슈팅 #28)
+# 마스코트 모델 (2026-10 교체, 트러블슈팅 #29)
 #   flux     : flux-dev($0.025)            → flux-2-pro($0.015/MP)
 #   ideogram : ideogram-v2a-turbo($0.025)  → ideogram-v3-turbo($0.03)
 #   imagen   : stable-diffusion-3.5-medium($0.035) → imagen-4-fast($0.02)
-#   recraft  : recraft-v3-svg($0.08)       → recraft-v4($0.04, 래스터)
+#   recraft  : recraft-v3-svg($0.08)       → recraft-v4-svg($0.08)
+#              래스터 recraft-v4($0.04)는 실측에서 평면 벡터 대신 털 달린 3D 가 나와 쓰지 않는다
 # 모델 id 는 환경변수로 바꿀 수 있다. 입력 형식이 다른 모델로 바꾸면 payload 도 같이 고친다.
 # ------------------------------------------------------------
 FLUX_MODEL = os.getenv("MASCOT_FLUX_MODEL", "black-forest-labs/flux-2-pro")
 IDEOGRAM_MODEL = os.getenv("MASCOT_IDEOGRAM_MODEL", "ideogram-ai/ideogram-v3-turbo")
 IMAGEN_MODEL = os.getenv("MASCOT_IMAGEN_MODEL", "google/imagen-4-fast")
-RECRAFT_MODEL = os.getenv("MASCOT_RECRAFT_MODEL", "recraft-ai/recraft-v4")
+RECRAFT_MODEL = os.getenv("MASCOT_RECRAFT_MODEL", "recraft-ai/recraft-v4-svg")
 
 
 def _extract_image_url(output):
@@ -144,7 +145,7 @@ def run_imagen(prompt: str, output_path: str):
 
 
 def run_recraft(prompt: str, output_path: str):
-    # recraft-v4-svg 로 바꿔도 동작한다 (SVG 는 PNG 로 변환해 저장)
+    # SVG 는 PNG 로 변환해 저장한다 (_save_as_png)
     return _run("RECRAFT", RECRAFT_MODEL, {
         "prompt": prompt,
         "size": "1024x1024",
